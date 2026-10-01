@@ -1,7 +1,7 @@
-// Offline support for the SAA-C03 portal.
+// Offline support for the VG Learner Portal.
 // The page is fully self-contained, so caching these files is enough to run
 // with no network. Bump CACHE when you deploy a new index.html.
-const CACHE = 'saa-portal-v6';
+const CACHE = 'saa-portal-v11';
 const ASSETS = [
   './',
   './index.html',

@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """
-SAA-C03 Cloud Lab Portal - live lab dependency monitor (Flask backend).
+VG Learner Portal - Flask backend: serves the portal, login API and live lab dependency monitor.
 
 Serves index.html and exposes:
   GET  /api/health         liveness probe (never touches downstream tiers)
   GET  /api/lab/status     cached, non-blocking snapshot of every tier check
   POST /api/lab/refresh    ask the background loop to run a cycle now (rate limited)
+  /api/auth/*, /api/admin/* login gateway, sessions and audit log (see auth.py)
+  The lab endpoints require a signed-in session unless AUTH_ENABLED=false.
 
 Environment variables
   RDS_HOST / RDS_PORT (5432)          RDS endpoint, e.g. mydb.abc123.us-east-1.rds.amazonaws.com
@@ -52,6 +54,8 @@ import boto3
 from botocore.config import Config as BotoConfig
 from botocore.exceptions import BotoCoreError, ClientError
 from flask import Flask, jsonify, request, send_from_directory
+
+import auth
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 
@@ -604,15 +608,18 @@ def create_app() -> Flask:
     monitor.start()
     atexit.register(monitor.stop)
     app.extensions["lab_monitor"] = monitor
+    auth.init_app(app)  # login gateway, sessions, MFA, audit log (/api/auth, /api/admin)
 
     @app.after_request
     def _headers(resp):
         if request.path.startswith("/api/"):
             resp.headers["Access-Control-Allow-Origin"] = CORS_ALLOW_ORIGIN
             resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-            resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+            resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
             resp.headers["Cache-Control"] = "no-store"
         resp.headers["X-Content-Type-Options"] = "nosniff"
+        resp.headers["X-Frame-Options"] = "DENY"
+        resp.headers["Referrer-Policy"] = "no-referrer"
         return resp
 
     @app.get("/")
@@ -644,8 +651,11 @@ def create_app() -> Flask:
     def health():
         return jsonify(ok=True, time=_now_iso())
 
-    @app.get("/api/lab/status")
+    @app.route("/api/lab/status", methods=["GET", "OPTIONS"])
+    @auth.require_auth
     def lab_status():
+        if request.method == "OPTIONS":
+            return ("", 204)
         data = monitor.snapshot()
         orig = request.environ.get("werkzeug.proxy_fix.orig", {})
         data["client"] = {
@@ -665,6 +675,7 @@ def create_app() -> Flask:
         return jsonify(data)
 
     @app.route("/api/lab/refresh", methods=["POST", "OPTIONS"])
+    @auth.require_auth
     def lab_refresh():
         if request.method == "OPTIONS":
             return ("", 204)
