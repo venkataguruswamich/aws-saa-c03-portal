@@ -60,7 +60,11 @@ User management (run on the server):
 
 Environment variables
   AUTH_ENABLED (true)            false = no login wall (not recommended)
-  AUTH_DB (data/portal.db)       SQLite file for users, sessions and audit log
+  AUTH_DB (data/portal.db, or /tmp/auth.db on Vercel/Lambda)
+                                  SQLite file for users, sessions and audit log.
+                                  /tmp on serverless platforms is EPHEMERAL - see
+                                  the AUTH_DB comment below for why that is not
+                                  durable production storage.
   SESSION_TTL_MINUTES (720)      absolute session lifetime
   ONLINE_WINDOW_SECONDS (60)     heartbeat age that still counts as "online now"
   MAX_FAILED_LOGINS (5)          failures per email before lockout
@@ -150,8 +154,25 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+# Vercel (and most other serverless platforms) set this automatically; nothing
+# else in this file depends on it besides picking a writable default DB path.
+IS_SERVERLESS = bool(os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
+
 AUTH_ENABLED = _env_bool("AUTH_ENABLED", True)
-AUTH_DB = os.getenv("AUTH_DB", str(BASE_DIR / "data" / "portal.db"))
+# AUTH_DB: SQLite file for users, sessions and the audit log.
+#   - Local/Docker (default): BASE_DIR/data/portal.db, a real path on a real disk.
+#   - Serverless (Vercel/Lambda) default: /tmp/auth.db. /var/task (BASE_DIR) is
+#     read-only at runtime there, so writing under it raises
+#     OSError: [Errno 30] Read-only file system.
+#   /tmp IS NOT PERSISTENT STORAGE on Vercel: it is a per-instance scratch disk
+#   that is wiped whenever the function's container is recycled (which can
+#   happen between any two requests), and it is never shared across concurrent
+#   instances. Every cold start effectively starts with an empty user/session/
+#   audit database. This unblocks deployment but does NOT give you durable
+#   accounts, sessions or audit history in production - set AUTH_DB to a
+#   network database (see below) for that. Set AUTH_DB explicitly to override
+#   either default.
+AUTH_DB = os.getenv("AUTH_DB", "/tmp/auth.db" if IS_SERVERLESS else str(BASE_DIR / "data" / "portal.db"))
 SESSION_TTL = max(5, _env_int("SESSION_TTL_MINUTES", 720)) * 60
 ONLINE_WINDOW = max(15, _env_int("ONLINE_WINDOW_SECONDS", 60))
 MAX_FAILED = max(1, _env_int("MAX_FAILED_LOGINS", 5))
@@ -232,8 +253,28 @@ def totp_uri(email: str, secret: str) -> str:
 # Storage
 # ---------------------------------------------------------------------------
 class AuthStore:
+    @staticmethod
+    def _writable_path(path: str) -> str:
+        """Create the DB's parent directory, falling back to /tmp if that
+        location turns out to be read-only (e.g. AUTH_DB was left pointing at
+        BASE_DIR/data on a serverless platform). /tmp is ephemeral - see the
+        AUTH_DB comment above - so this is a last-resort safety net to avoid a
+        hard crash, not a substitute for setting AUTH_DB/a real database."""
+        try:
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            return path
+        except OSError as exc:
+            fallback = f"/tmp/{Path(path).name or 'auth.db'}"
+            log.warning(
+                "AUTH_DB path %r is not writable (%s); falling back to ephemeral %r. "
+                "Set AUTH_DB to a writable path, or use a persistent database.",
+                path, exc, fallback,
+            )
+            Path(fallback).parent.mkdir(parents=True, exist_ok=True)
+            return fallback
+
     def __init__(self, path: str):
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        path = self._writable_path(path)
         self.db = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
         self.db.row_factory = sqlite3.Row
         self.lock = threading.Lock()

@@ -22,7 +22,20 @@ Environment variables
   MAX_CONCURRENT_SOCKETS (6)          hard cap on simultaneously open probe sockets
   PROXY_X_FOR_HOPS (2)                trusted reverse-proxy hops in X-Forwarded-For
   IMDS_ENDPOINT (http://169.254.169.254)
-  IMDS_DISABLED (false)               skip IMDS lookups (local development off EC2)
+  IMDS_DISABLED (false; true automatically on Vercel/Lambda)
+                                       skip IMDS lookups (off EC2 there is no metadata
+                                       service to reach, so this must default on there)
+  AWS_MONITORING_ENABLED (true; false automatically on Vercel/Lambda)
+                                       enable the DynamoDB tier check (and its boto3
+                                       client). Off by default on serverless because it
+                                       has no EC2 instance role to get credentials from;
+                                       turn it on there only alongside an explicit
+                                       AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY (IAM user).
+  LAB_MONITOR_ENABLED (true; false automatically on Vercel/Lambda)
+                                       run the background probe loop. A persistent thread
+                                       fits a long-lived container, not a serverless
+                                       function; when disabled, each /api/lab/status or
+                                       /api/lab/refresh call runs one check on demand.
   CORS_ALLOW_ORIGIN (*)               origin allowed to call the API from another host
   HOST (127.0.0.1) / PORT (5000)
 
@@ -81,6 +94,11 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 
 BASE_DIR = Path(__file__).resolve().parent
+# Vercel (and most serverless platforms) set this automatically. There is no
+# EC2 instance profile and no 169.254.169.254 link-local IMDS endpoint reachable
+# from a Vercel function, so AWS-metadata-dependent behaviour must default OFF
+# there instead of retrying/failing against infrastructure that doesn't exist.
+IS_SERVERLESS = bool(os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
 AWS_REGION = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or "us-east-1"
 CHECK_INTERVAL = max(2.0, _env_float("CHECK_INTERVAL_SECONDS", 10.0))
 SOCKET_TIMEOUT = max(0.5, _env_float("SOCKET_TIMEOUT_SECONDS", 3.0))
@@ -88,10 +106,28 @@ MIN_REFRESH_GAP = max(0.5, _env_float("MIN_REFRESH_GAP_SECONDS", 2.0))
 MAX_CONCURRENT_SOCKETS = max(1, _env_int("MAX_CONCURRENT_SOCKETS", 6))
 PROXY_HOPS = max(0, _env_int("PROXY_X_FOR_HOPS", 2))
 IMDS_ENDPOINT = os.getenv("IMDS_ENDPOINT", "http://169.254.169.254").rstrip("/")
-IMDS_DISABLED = _env_bool("IMDS_DISABLED")
+# Off EC2 (Vercel, local dev, most CI) IMDS is unreachable by definition, so
+# default it to disabled there instead of waiting out a doomed timeout/retry
+# loop on every lab-status check. Explicit IMDS_DISABLED=false always wins.
+IMDS_DISABLED = _env_bool("IMDS_DISABLED", default=IS_SERVERLESS)
 CORS_ALLOW_ORIGIN = os.getenv("CORS_ALLOW_ORIGIN", "*")
 DYNAMODB_TABLE = os.getenv("DYNAMODB_TABLE", "").strip()
 DYNAMODB_ENDPOINT_URL = os.getenv("DYNAMODB_ENDPOINT_URL", "").strip()
+# The DynamoDB tier check creates a real boto3 client and calls the DynamoDB
+# API, which makes botocore resolve AWS credentials. With no explicit
+# AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY and no EC2 instance profile, botocore
+# falls back to IMDS - which doesn't exist on Vercel - and raises
+# "MetadataRetrievalError: Unable to retrieve token for use in IMDSv2 call".
+# Default this check OFF on serverless unless the operator explicitly opts in
+# (normally alongside AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY for an IAM user,
+# since there is no instance role to fall back on).
+AWS_MONITORING_ENABLED = _env_bool("AWS_MONITORING_ENABLED", default=not IS_SERVERLESS)
+# The background probe thread fits a long-lived container (Docker/EC2), not a
+# request-scoped serverless function: it would be started fresh (and possibly
+# killed mid-cycle) on every cold start and shares nothing across instances.
+# Default it OFF on serverless; lab_status() below falls back to an on-demand
+# synchronous check instead (see LabMonitor.ensure_fresh).
+LAB_MONITOR_ENABLED = _env_bool("LAB_MONITOR_ENABLED", default=not IS_SERVERLESS)
 
 # botocore resolves credentials from IMDS on its own. Force IMDSv2-only and give
 # it enough time/attempts to survive the extra network hop of a Docker bridge.
@@ -118,6 +154,8 @@ class TierConfig:
 
 
 def _dynamodb_target() -> tuple[str, int, bool]:
+    if not AWS_MONITORING_ENABLED:
+        return "", 443, True  # host="" -> UNCONFIGURED, same as RDS/ElastiCache with no host set
     if DYNAMODB_ENDPOINT_URL:
         parsed = urlparse(DYNAMODB_ENDPOINT_URL)
         tls = parsed.scheme == "https"
@@ -134,7 +172,8 @@ TIERS: tuple[TierConfig, ...] = (
     TierConfig("elasticache", "Amazon ElastiCache (Redis)", os.getenv("REDIS_HOST", "").strip(),
                _env_int("REDIS_PORT", 6379), "redis", tls=_redis_tls, env_hint="REDIS_HOST"),
     TierConfig("dynamodb", "Amazon DynamoDB", _ddb_host, _ddb_port,
-               "tls" if _ddb_tls else "tcp", tls=_ddb_tls, env_hint="DYNAMODB_ENDPOINT_URL"),
+               "tls" if _ddb_tls else "tcp", tls=_ddb_tls,
+               env_hint="AWS_MONITORING_ENABLED" if not AWS_MONITORING_ENABLED else "DYNAMODB_ENDPOINT_URL"),
 )
 
 
@@ -477,6 +516,19 @@ class LabMonitor:
             log.info("Lab monitor started (interval=%.1fs, timeout=%.1fs, socket cap=%d)",
                      self._interval, SOCKET_TIMEOUT, MAX_CONCURRENT_SOCKETS)
 
+    def ensure_fresh(self, max_age: float = 5.0) -> None:
+        """Serverless-safe fallback for when the background thread was never
+        started (LAB_MONITOR_ENABLED=false): run one synchronous cycle on
+        request if the cached snapshot is missing or older than max_age,
+        instead of leaving every tier stuck at PENDING forever. No-op while
+        the background thread is alive and doing this job already."""
+        if self._thread.is_alive():
+            return
+        with self._lock:
+            stale = self._cycle == 0 or (time.monotonic() - self._last_run) > max_age
+        if stale:
+            self._run_cycle()
+
     def stop(self) -> None:
         self._stop.set()
         self._wake.set()
@@ -491,7 +543,10 @@ class LabMonitor:
             gap = time.monotonic() - self._last_run
             if gap < MIN_REFRESH_GAP:
                 return False, MIN_REFRESH_GAP - gap
-        self._wake.set()
+        if self._thread.is_alive():
+            self._wake.set()  # background loop picks this up on its own
+        else:
+            self._run_cycle()  # no background loop (serverless): run it inline now
         return True, 0.0
 
     def _loop(self) -> None:
@@ -605,8 +660,19 @@ def create_app() -> Flask:
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=PROXY_HOPS, x_proto=1, x_host=1)
 
     monitor = LabMonitor(TIERS, IMDSv2Client(IMDS_ENDPOINT), CHECK_INTERVAL)
-    monitor.start()
-    atexit.register(monitor.stop)
+    if LAB_MONITOR_ENABLED:
+        # A persistent background thread only makes sense in a long-lived
+        # container (Docker/EC2/gunicorn worker). Never let a failure here
+        # (or anything AWS-related) take the whole app down with it.
+        try:
+            monitor.start()
+            atexit.register(monitor.stop)
+        except Exception:
+            log.exception("Lab monitor background thread failed to start; "
+                           "continuing without it (on-demand checks still work)")
+    else:
+        log.info("Lab monitor background thread disabled (LAB_MONITOR_ENABLED=false); "
+                  "falling back to on-demand checks per request (see ensure_fresh)")
     app.extensions["lab_monitor"] = monitor
     auth.init_app(app)  # login gateway, sessions, MFA, audit log (/api/auth, /api/admin)
 
@@ -656,6 +722,7 @@ def create_app() -> Flask:
     def lab_status():
         if request.method == "OPTIONS":
             return ("", 204)
+        monitor.ensure_fresh()  # no-op if the background thread is already keeping this warm
         data = monitor.snapshot()
         orig = request.environ.get("werkzeug.proxy_fix.orig", {})
         data["client"] = {
