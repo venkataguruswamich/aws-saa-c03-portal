@@ -1,6 +1,6 @@
 # AWS SAA-C03 Smart Adaptive Portal
 
-This is a single-file SPA (`index.html`). Your logo is embedded inside it, so it needs no build step and no backend. Progress is stored in your browser's `localStorage`.
+This is a single-file SPA (`index.html`). Your logo is embedded inside it, so it needs no build step and no database. Progress is stored in your browser's `localStorage`. One small serverless function, `api/track-session.js`, sends onboarding and progress notifications to a webhook.
 
 ## Run
 
@@ -14,12 +14,13 @@ You can also double-click `index.html`. Everything works, **except** YouTube emb
 
 ## Learning flow
 
-Every section is open from the start. Taking the diagnostic first is recommended, but not required.
-
-1. **Identity.** Optional. Your name is pre-filled.
-2. **Diagnostic.** A 10-question baseline covering Decoupling, High Availability, Block vs File Storage and Private Network Routing. You get no feedback until you submit.
-3. **Analytics Hub.** Domain tracking table, a heatmap of domain × skill area, the Blind Spot Report (any concept below 72%, which is roughly 720/1000), a concept tracking table and an answer log. Before a diagnostic, it tracks your drill answers only.
-4. **Coaching Core.** Split screen: adaptive drills on the left, the Instant Tutor on the right. The **Master It** masterclass drawer can be opened at any time. It is highlighted as *recommended* when you miss a scenario twice or flag it as *Confused*.
+1. **Identity (Phase 1, required).** Full name, AWS experience level and target exam date. Until this is submitted, nothing else renders. See *Onboarding gate* below.
+2. **Diagnostic (Phase 2).** A 20-question pool in four styles: multiple choice, choose-two multi-select, true/false, and fill in the blank. Question order and answer choices are reshuffled (Fisher-Yates, Web Crypto RNG) on every page load. Answers are stored against the original option indices, so scoring never drifts. You get no feedback until you submit.
+3. **Analytics Hub.** Domain tracking table, a heatmap of domain × skill area, the Blind Spot Report (any concept below 72%, which is roughly 720/1000), a concept tracking table and an answer log.
+4. **Remediation Zone (Phase 3).** The diagnostic is scored across Compute, Storage, Networking, Identity & Security and Databases. Each category below 72% gets step-by-step rules, a production example and an ASCII architecture diagram. **Practice exams stay locked until every weak topic is marked "Mastered".** A retake re-locks topics that are weak again.
+5. **Coaching Core.** Adaptive drills with the Instant Tutor and the **Master It** masterclass drawer.
+6. **Practice Exams (Phase 4).** Six exam-style sets of 10 questions each, in a video-player layout with a running timer (2 minutes per question), a question timeline, "Lock answer" and a slide-out explanation pane. Finishing a set sends a `practice_complete` event.
+7. **Final Result (Phase 5).** Certification Readiness Score = diagnostic 20% + remediation 10% + practice sets 70% (unfinished sets count as 0%). Shows a score ring, strengths and weaknesses by category, and a pass-likelihood verdict. The full training summary is sent automatically when all six sets are done, and can be re-sent with a button.
 
 Mastery counts only your **first** answer each time a scenario is served. Retries are logged but not scored.
 
@@ -46,22 +47,37 @@ The portal is one static file. This repo is connected to Vercel, so every push t
 | `index.html` | The whole portal. |
 | `vercel.json` | Static hosting with no framework or build, and security headers. |
 | `sw.js` | Cleans up after the previous version: it removes that version's offline service worker and its caches for returning visitors. |
-| `middleware.js` | Password-protects the whole site on Vercel's servers (see below). |
-| `package.json` | Marks the project as ES modules so Vercel can run `middleware.js`. It has no dependencies. |
+| `api/track-session.js` | Serverless function. It relays onboarding and progress events to your Discord or Telegram webhook and stores nothing (see below). |
+| `package.json` | Marks the project as ES modules so Vercel can run `api/track-session.js`. It has no dependencies. |
 
-## Private access (password)
+## Onboarding gate and progress stream
 
-The entire portal sits behind a browser password prompt that Vercel's servers enforce **before** any page is sent. Without the password, nobody can open the portal or see your identity data.
+Until a visitor submits **Step 1 · Identity identification**, the portal renders nothing else: no header, no navigation and no views. The Step 1 card asks for a full name, an AWS experience level and a target exam date. Submitting it posts a `session_start` event to `/api/track-session`, unlocks the portal and opens the diagnostic test.
+
+The session token lives in `sessionStorage`, so a new browser session shows Step 1 again. Nothing is pre-filled. Entering the same name resumes the saved progress; a different name starts a fresh profile, so one learner never sees another's data.
+
+The portal then streams these progress events to the same endpoint:
+
+| Event | When |
+|---|---|
+| `diagnostic_complete` | On each diagnostic submission. It includes the score and the weak areas. |
+| `module_complete` | The first time every drill in a skill area (Decoupling, High Availability, …) has been answered. |
+| `readiness` | When weighted mastery first reaches 72%, and again at 85%, after at least 10 scored answers. |
+| `practice_complete` | Each finished practice set: "User X completed Practice Set 3/6. Score: 82%". |
+| `final_report` | Readiness score, verdict, diagnostic and practice averages, mastered topics, strengths and weak areas. |
+
+If the network or the webhook fails, nothing breaks. The visitor is let in anyway, and events wait in a `localStorage` outbox that retries with back-off (and when the browser comes back online) for up to 7 days.
+
+The gate is a client-side funnel, not access control. The question bank still ships inside `index.html`.
 
 Set these in **Vercel → Project → Settings → Environment Variables**, then redeploy:
 
-| Variable | Required | Meaning |
+| Variable | Required | Value |
 |---|---|---|
-| `SITE_PASSWORD` | yes | The password typed at the prompt. If it's missing, the site stays **closed** (it does not fail open). |
-| `SITE_USER` | no | If set, the username must match too. If not set, any username is accepted. |
+| `PROCESS_WEBHOOK_URL` | yes | Discord: `https://discord.com/api/webhooks/<id>/<token>`<br>Telegram: `https://api.telegram.org/bot<token>/sendMessage?chat_id=<chat id>` |
+| `TELEGRAM_CHAT_ID` | no | Telegram chat id, used if it isn't already in the URL. |
 
-To change the password, edit the variable and redeploy. Browsers remember the login until they're closed.
-The password lives only in Vercel, never in this repo.
+The webhook URL is a secret. Keep it only in Vercel and never commit it.
 
 It also works on S3 + CloudFront, Amplify Hosting, Netlify or GitHub Pages.
 
