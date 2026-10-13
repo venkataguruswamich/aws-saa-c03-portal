@@ -41,6 +41,17 @@ You can also double-click `index.html`. Everything works, **except** YouTube emb
 
    The full learning-history report is sent automatically when all six sets are done, and can be re-sent with a button. It includes domains, set scores, mastered topics, strengths, weak areas, answers and time.
 
+8. **Self-Healing Security (master module).** This module covers Automated Security Remediation & Self-Healing Architecture. It is also linked from the Remediation Zone. It includes:
+   - an animated pipeline diagram with the Remediation Zone boundary;
+   - an ASCII architecture map;
+   - two step-by-step event traces: a public S3 bucket, and unauthorized API calls from a compromised EC2 instance;
+   - an account-boundary model;
+   - an exam-level reference for 21 services in groups A–F;
+   - isolation, idempotency and retry best practices;
+   - tested reference code: an EventBridge pattern, a Python Lambda, and an IAM trust policy and permissions policy.
+
+   **Download as Markdown** exports the whole guide.
+
 Rendering runs inside an error boundary: if a view fails, the learner sees a recovery card instead of a blank page. Tracking never throws into the UI.
 
 Mastery counts only your **first** answer each time a scenario is served. Retries are logged but not scored.
