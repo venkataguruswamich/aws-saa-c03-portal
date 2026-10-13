@@ -46,6 +46,22 @@ The portal is one static file. This repo is connected to Vercel, so every push t
 | `index.html` | The whole portal. |
 | `vercel.json` | Static hosting with no framework or build, and security headers. |
 | `sw.js` | Cleans up after the previous version: it removes that version's offline service worker and its caches for returning visitors. |
+| `middleware.js` | Password-protects the whole site on Vercel's servers (see below). |
+| `package.json` | Marks the project as ES modules so Vercel can run `middleware.js`. It has no dependencies. |
+
+## Private access (password)
+
+The entire portal sits behind a browser password prompt that Vercel's servers enforce **before** any page is sent. Without the password, nobody can open the portal or see your identity data.
+
+Set these in **Vercel → Project → Settings → Environment Variables**, then redeploy:
+
+| Variable | Required | Meaning |
+|---|---|---|
+| `SITE_PASSWORD` | yes | The password typed at the prompt. If it's missing, the site stays **closed** (it does not fail open). |
+| `SITE_USER` | no | If set, the username must match too. If not set, any username is accepted. |
+
+To change the password, edit the variable and redeploy. Browsers remember the login until they're closed.
+The password lives only in Vercel, never in this repo.
 
 It also works on S3 + CloudFront, Amplify Hosting, Netlify or GitHub Pages.
 

@@ -1,0 +1,6 @@
+{
+  "name": "aws-saa-c03-portal",
+  "private": true,
+  "type": "module",
+  "description": "Static single-file portal; middleware.js adds server-side password protection on Vercel."
+}
