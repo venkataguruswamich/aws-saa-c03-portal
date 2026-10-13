@@ -14,10 +14,12 @@ You can also double-click `index.html`. Everything works, **except** YouTube emb
 
 ## Learning flow
 
-1. **Identity.** Enter your name. Until you do, every other phase stays locked.
-2. **Diagnostic.** A forced 10-question baseline covering Decoupling, High Availability, Block vs File Storage and Private Network Routing. You get no feedback until you submit.
-3. **Analytics Hub.** Domain tracking table, a heatmap of domain × skill area, the Blind Spot Report (any concept below 72%, which is roughly 720/1000), a concept tracking table and an answer log.
-4. **Coaching Core.** Split screen: adaptive drills on the left, the Instant Tutor on the right. The **Master It** drawer unlocks when you miss a scenario twice or flag it as *Confused*.
+Every section is open from the start. Taking the diagnostic first is recommended, but not required.
+
+1. **Identity.** Optional. Your name is pre-filled.
+2. **Diagnostic.** A 10-question baseline covering Decoupling, High Availability, Block vs File Storage and Private Network Routing. You get no feedback until you submit.
+3. **Analytics Hub.** Domain tracking table, a heatmap of domain × skill area, the Blind Spot Report (any concept below 72%, which is roughly 720/1000), a concept tracking table and an answer log. Before a diagnostic, it tracks your drill answers only.
+4. **Coaching Core.** Split screen: adaptive drills on the left, the Instant Tutor on the right. The **Master It** masterclass drawer can be opened at any time. It is highlighted as *recommended* when you miss a scenario twice or flag it as *Confused*.
 
 Mastery counts only your **first** answer each time a scenario is served. Retries are logged but not scored.
 
@@ -30,7 +32,7 @@ Edit the `CONFIG` block at the top of the `<script>`:
 | `ownerName` | `Venkataguruswami`. Shown beside the logo and pre-filled as the learner name. |
 | `logo` | Embedded default logo (the transparent VG cloud logo, as a data URI). You can also replace it per browser in **Settings**. |
 | `stuckThreshold` | Default `0.72`. |
-| `masterItAfterWrong` | Default `2`. |
+| `masterItAfterWrong` | Default `2`. The number of misses before Master It is highlighted as recommended. |
 | `trainingSets` | Hard-code a YouTube video or playlist URL for each concept. Links pasted in the drawer override these. |
 
 To add questions, append to `DIAGNOSTIC` or `DRILLS`. Each question needs a `concept` key that exists in `CONCEPTS`.
