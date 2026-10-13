@@ -85,7 +85,9 @@ function parseEvent(body) {
       const setsCompleted = int(d.setsCompleted, 0, 20), setsTotal = int(d.setsTotal, 1, 20), verdict = clean(d.verdict, 60);
       if ([readinessPct, diagnosticPct, practiceAvgPct, setsCompleted, setsTotal].includes(null) || !verdict) return { error: 'Invalid final report.' };
       return { ...base, readinessPct, verdict, diagnosticPct, practiceAvgPct, setsCompleted, setsTotal,
-        topicsMastered: list(d.topicsMastered), strengths: list(d.strengths), weakAreas: list(d.weakAreas) };
+        topicsMastered: list(d.topicsMastered), strengths: list(d.strengths), weakAreas: list(d.weakAreas),
+        examReady: d.examReady === true, domains: list(d.domains, 4), setScores: list(d.setScores, 20),
+        answered: int(d.answered, 0, 100000) ?? 0, studyMinutes: int(d.studyMinutes, 0, 100000) ?? 0 };
     }
   }
   return { error: 'Unknown event.' };
@@ -128,7 +130,11 @@ function compose(e, now) {
       lines = [
         `• Name: ${e.name}`,
         `• Certification Readiness Score: ${e.readinessPct}% (${e.verdict})`,
+        `• Highly ready for the live exam: ${e.examReady ? 'YES ✅' : 'NOT YET ❌'}`,
+        `• Exam domains: ${join(e.domains, 'no data')}`,
         `• Diagnostic: ${e.diagnosticPct}% | Practice sets: ${e.setsCompleted}/${e.setsTotal}, average ${e.practiceAvgPct}%`,
+        `• Set scores: ${join(e.setScores, 'none yet')}`,
+        `• Scored answers: ${e.answered} | Practice time: ${e.studyMinutes} min`,
         `• Topics mastered: ${join(e.topicsMastered, 'None required')}`,
         `• Strengths: ${join(e.strengths, 'None above 85% yet')}`,
         `• Weak areas: ${weak(e.weakAreas)}`,

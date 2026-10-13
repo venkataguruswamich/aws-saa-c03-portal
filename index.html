@@ -47,9 +47,19 @@
     .thin-scroll::-webkit-scrollbar-thumb { background: rgb(100 116 139 / .45); border-radius: 3px; }
     kbd { display: inline-block; min-width: 1.2rem; padding: 0 .3rem; border: 1px solid rgb(148 163 184 / .6); border-bottom-width: 2px; border-radius: .3rem; font: 500 .68rem 'JetBrains Mono', monospace; text-align: center; }
     dialog::backdrop { background: rgb(2 6 23 / .65); backdrop-filter: blur(2px); }
+    /* Serverless architecture diagram: moving data flows (stroke-dashoffset) and pulsing alerts */
+    .svl-flow { stroke-dasharray: 7 9; animation: svlFlow 1.4s linear infinite; }
+    .svl-fast { stroke-dasharray: 12 10; animation: svlFast .45s linear infinite; }
+    .svl-pulse { animation: svlPulse 1s ease-in-out infinite; }
+    @keyframes svlFlow { to { stroke-dashoffset: -32; } }
+    @keyframes svlFast { to { stroke-dashoffset: -44; } }
+    @keyframes svlPulse { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
+    .svl-paused .svl-flow, .svl-paused .svl-fast, .svl-paused .svl-pulse { animation-play-state: paused; }
+    [data-action="svl-node"]:focus { outline: none; }
+    [data-action="svl-node"]:focus-visible rect:first-of-type { stroke: #fbbf24; stroke-width: 3.5; }
     @media (prefers-reduced-motion: reduce) {
       html { scroll-behavior: auto; }
-      .fade-in, .pulse-ring { animation: none !important; }
+      .fade-in, .pulse-ring, .svl-flow, .svl-fast, .svl-pulse { animation: none !important; }
       #drawer-panel, #drawer-overlay { transition: none !important; }
     }
   </style>
@@ -656,12 +666,12 @@ Object.assign(CONCEPTS, {
    ===================================================================== */
 const CATEGORIES = {
   compute: {
-    name: 'Compute', icon: '🖥️', concepts: ['asg', 'ec2-core', 'sqs', 'fanout', 'circuit'],
-    blurb: 'EC2, Auto Scaling, purchasing models and decoupled application tiers.',
+    name: 'Compute', icon: '🖥️', concepts: ['asg', 'ec2-core', 'circuit'],
+    blurb: 'EC2, Auto Scaling, Lambda, containers (ECS, EKS, Fargate) and purchasing models.',
     steps: [
       ['Never expose single instances', 'Put an Elastic Load Balancer in front and run the instances in an Auto Scaling group that spans at least two Availability Zones. If an AZ fails, you lose a slice of capacity, not the application.'],
       ['Scale on a demand signal', 'Target tracking on average CPU, ALB RequestCountPerTarget, or SQS backlog per instance keeps capacity matched to load with no manual work.'],
-      ['Decouple slow work', 'The web tier drops jobs on an SQS queue and returns immediately. Workers scale on queue depth. SNS fans one event out to several independent queues.'],
+      ['Pick the right compute model', 'EC2 when you need full control of the OS; containers on ECS or EKS for microservices; Lambda for short event-driven code. Fargate runs containers without servers.'],
       ['Buy compute wisely', 'Savings Plans for the steady baseline, Spot for interruptible jobs, On-Demand for the unpredictable rest. Right-size with Compute Optimizer.'],
       ['Go serverless when you can', 'Lambda (up to 15 minutes per invocation) and Fargate remove server patching and capacity planning entirely.'],
     ],
@@ -727,8 +737,8 @@ const CATEGORIES = {
     [ RDS primary . AZ-a ] ==== synchronous ==== [ RDS standby . AZ-b ]`,
   },
   identity: {
-    name: 'Identity & Security', icon: '🔐', concepts: ['iam-core', 'identity', 'waf'],
-    blurb: 'IAM policies and roles, SCPs, federation, encryption and edge protection.',
+    name: 'Security & Identity', icon: '🔐', concepts: ['iam-core', 'identity', 'waf'],
+    blurb: 'IAM roles, policies and STS, KMS, Secrets Manager, WAF, Shield, GuardDuty and Organizations.',
     steps: [
       ['Lock away the root user', 'Turn on MFA, delete root access keys and use root only for the handful of tasks that require it.'],
       ['Grant least privilege', 'Allow only the actions and resources a principal needs. Use IAM Access Analyzer to find unused or overly broad access.'],
@@ -747,8 +757,8 @@ const CATEGORIES = {
              no matching ALLOW  ==>  implicit DENY`,
   },
   databases: {
-    name: 'Databases', icon: '🛢️', concepts: ['multiaz', 'aurora-global', 'dynamodb'],
-    blurb: 'RDS and Aurora availability, read scaling, DynamoDB and caching.',
+    name: 'Databases & Analytics', icon: '🛢️', concepts: ['multiaz', 'aurora-global', 'dynamodb'],
+    blurb: 'RDS, Aurora, DynamoDB, ElastiCache, plus Redshift, EMR and Athena for analytics.',
     steps: [
       ['Pick the engine by access pattern', 'Relational joins and transactions → RDS or Aurora. Key-value at any scale → DynamoDB. Repeated hot reads → ElastiCache or DAX.'],
       ['Availability is not read scaling', 'Multi-AZ keeps a synchronous standby for automatic failover. Read replicas are asynchronous copies that serve read traffic.'],
@@ -756,7 +766,7 @@ const CATEGORIES = {
       ['Protect the connection pool', 'RDS Proxy pools and reuses connections when thousands of Lambda invocations hit a relational database.'],
       ['Protect the data', 'Automated backups and point-in-time recovery, KMS encryption at rest (chosen at creation for RDS), and databases only in private subnets.'],
     ],
-    example: 'An online store runs Aurora MySQL with a Multi-AZ writer and two Aurora Replicas for product reads, ElastiCache for Redis for sessions, and DynamoDB with DAX for shopping carts. Aurora Global Database copies everything to a second Region for disaster recovery.',
+    example: 'Migrating a legacy monolithic MySQL server to an encrypted (KMS), highly available Amazon Aurora Serverless v2 cluster whose writer and auto-scaling read replicas span three Availability Zones. ElastiCache for Redis absorbs hot reads, DynamoDB with DAX holds shopping carts, and nightly exports to S3 are queried with Athena for reporting.',
     diagram: String.raw`
  App tier --writes--> [ Aurora writer . AZ-a ]   storage: 6 copies across 3 AZs
     |                         |
@@ -768,8 +778,87 @@ const CATEGORIES = {
     +--cache---> [ ElastiCache for Redis ]
     +--carts---> [ DAX ] --> [ DynamoDB table ] <== Global Tables ==> Region 2`,
   },
+  messaging: {
+    name: 'Management & Messaging', icon: '📨', concepts: ['sqs', 'fanout'],
+    blurb: 'CloudWatch, CloudTrail, SQS, SNS, EventBridge and Step Functions.',
+    steps: [
+      ['Decouple with queues', 'Put SQS between producers and consumers so each side scales and fails on its own. Bursts wait in the queue instead of being dropped.'],
+      ['Fan out with topics', 'Publish once to SNS and give every consumer its own SQS queue. Use EventBridge when events must be routed by their content or come from SaaS partners.'],
+      ['Orchestrate multi-step work', 'Step Functions runs workflows with retries, branches, parallel steps and waits, so Lambda functions stay small and simple.'],
+      ['Watch everything', 'CloudWatch collects metrics and logs; alarms notify SNS or trigger Auto Scaling. Memory and disk metrics need the CloudWatch agent.'],
+      ['Audit every API call', 'CloudTrail records who did what and when. Use an organization trail delivered to a locked-down S3 bucket with log file validation.'],
+    ],
+    example: 'An order platform publishes each order to an SNS topic. Billing, shipping and analytics each read from their own SQS queue with a dead-letter queue. A Step Functions workflow coordinates payment, stock reservation and email. CloudWatch alarms on queue age page the on-call engineer through SNS, and CloudTrail logs every configuration change.',
+    diagram: String.raw`
+ Order API --publish--> [ SNS topic ] --+--> [ SQS billing   ] --> Lambda
+                                        +--> [ SQS shipping  ] --> ECS service
+                                        +--> [ SQS analytics ] --> Firehose
+                                                 |
+                                                 v  failed 5x
+                                          [ dead-letter queue ]
+
+ [ Step Functions ]: reserve stock --> charge card --> send email   (retries + catch)
+ [ CloudWatch alarm: queue age > 5 min ] --> [ SNS ] --> on-call engineer
+ [ CloudTrail organization trail ] --> [ S3 log bucket, Object Lock ]`,
+  },
 };
 const CATEGORY_KEYS = Object.keys(CATEGORIES);
+
+/** Plain-language service guide for every SAA-C03 blueprint service, grouped by remediation category. */
+const SERVICE_GUIDE = {
+  compute: [
+    ['Amazon EC2', 'Virtual servers you choose, size and manage yourself (OS, patches, scaling).', 'Long-running apps, custom software, special licensing.', 'Savings Plans for the steady baseline, Spot for interruptible work, On-Demand for the rest.'],
+    ['Auto Scaling groups', 'Keep the right number of healthy EC2 instances running across AZs and replace failed ones.', 'Any EC2 fleet behind a load balancer.', 'Target tracking for "keep X at Y%", scheduled or predictive scaling for known peaks, warm pools for slow boots.'],
+    ['AWS Lambda', 'Runs your code when an event arrives. No servers; you pay per request and duration.', 'APIs, file processing, glue between services.', 'Maximum 15 minutes per run. Use RDS Proxy with relational databases and provisioned concurrency to avoid cold starts.'],
+    ['Amazon ECS', 'AWS\'s own container orchestrator for running Docker tasks and long-running services.', 'Containerised microservices that integrate tightly with AWS.', 'The task role gives a container its AWS permissions. Runs on EC2 or on Fargate.'],
+    ['Amazon EKS', 'Managed Kubernetes control plane.', 'Teams already standardised on Kubernetes or needing portability.', 'Choose EKS when the question says "Kubernetes"; otherwise ECS is simpler.'],
+    ['AWS Fargate', 'Serverless engine that runs ECS or EKS containers with no instances to manage.', 'Containers without patching or capacity planning.', '"Containers + no servers to manage" → Fargate.'],
+  ],
+  storage: [
+    ['Amazon S3', 'Object storage with 11 nines of durability and classes from Standard to Glacier Deep Archive.', 'Static websites, data lakes, backups, media.', 'Lifecycle rules tier data; Block Public Access and bucket policies control access; presigned URLs give temporary access.'],
+    ['Amazon EBS', 'A block disk attached to one EC2 instance, living in one AZ.', 'Boot volumes and databases running on EC2.', 'gp3 goes up to 16,000 IOPS, io2 Block Express much higher. Snapshots copy across AZs and Regions.'],
+    ['Amazon EFS', 'Elastic NFS file system shared by many Linux instances across AZs.', 'Shared web content, home directories, CMS uploads.', 'Lifecycle to EFS Infrequent Access cuts cost. Linux / NFS only.'],
+    ['AWS Storage Gateway', 'A hybrid bridge that lets on-premises applications use AWS storage (File, Volume and Tape Gateway).', 'Extending on-premises file shares or backups into S3.', 'Tape Gateway replaces physical tape libraries; File Gateway presents S3 over NFS or SMB.'],
+    ['Amazon FSx', 'Fully managed file systems: Windows File Server, Lustre, NetApp ONTAP and OpenZFS.', 'Windows SMB shares with Active Directory; HPC scratch space.', 'Windows + SMB + AD → FSx for Windows. HPC + S3 data set → FSx for Lustre.'],
+  ],
+  networking: [
+    ['VPC, subnets & route tables', 'Your private network in a Region. Each subnet lives in one AZ, and route tables decide where traffic goes.', 'Every workload: isolate tiers in separate subnets.', 'A subnet is public only if its route table sends 0.0.0.0/0 to an internet gateway.'],
+    ['Internet & NAT gateways', 'The IGW gives public subnets two-way internet access. A NAT gateway gives private subnets outbound-only IPv4 access.', 'Private servers that must download patches.', 'Deploy one NAT gateway per AZ for high availability.'],
+    ['Security groups & NACLs', 'Security groups are stateful, allow-only firewalls on each network interface. NACLs are stateless subnet rules that can also deny.', 'Layered network protection.', 'Block an IP range → NACL deny. "Only from the app tier" → security group reference.'],
+    ['Amazon Route 53', 'DNS with routing policies: simple, weighted, latency, failover, geolocation, geoproximity and multivalue.', 'Global traffic steering and DNS failover.', 'Health checks + failover routing for DR. Alias records point the zone apex at AWS resources.'],
+    ['Amazon CloudFront', 'Content delivery network that caches content at hundreds of edge locations.', 'Fast global delivery of static and dynamic content.', 'OAC keeps S3 origins private. Integrates with WAF and Shield.'],
+    ['Elastic Load Balancing', 'ALB (layer 7, path and host routing), NLB (layer 4, static IPs, millions of requests per second), GWLB (security appliances).', 'Spreading traffic across healthy targets in many AZs.', 'Static IP or TCP/UDP → NLB. Path-based routing or HTTP features → ALB.'],
+    ['AWS Transit Gateway', 'A Regional hub that connects many VPCs and on-premises networks with transitive routing.', 'Dozens of VPCs plus VPN or Direct Connect.', 'Replaces a full mesh of peering connections.'],
+    ['VPC peering', 'A private one-to-one link between two VPCs.', 'A few VPCs that need to talk privately.', 'Not transitive, and the CIDRs must not overlap.'],
+    ['AWS PrivateLink', 'Exposes a single service privately to other VPCs through interface endpoints.', 'SaaS providers and shared internal services.', 'Works even with overlapping CIDRs because only one service is exposed.'],
+  ],
+  databases: [
+    ['Amazon RDS (Multi-AZ, read replicas)', 'Managed relational databases (MySQL, PostgreSQL, Oracle, SQL Server, MariaDB).', 'Traditional transactional applications.', 'Multi-AZ = synchronous standby for automatic failover. Read replicas = asynchronous copies that scale reads.'],
+    ['Amazon Aurora', 'MySQL / PostgreSQL-compatible engine whose storage keeps 6 copies across 3 AZs, with up to 15 low-lag replicas.', 'High-performance relational workloads.', 'Serverless v2 scales capacity automatically; Global Database gives cross-Region DR with about 1 s lag.'],
+    ['Amazon DynamoDB', 'Serverless key-value and document database with single-digit-millisecond latency at any scale.', 'Shopping carts, sessions, gaming, IoT.', 'DAX for microsecond reads, Global Tables for multi-Region, on-demand capacity for spiky traffic.'],
+    ['Amazon ElastiCache', 'In-memory Redis or Memcached cache.', 'Session stores, leaderboards, caching database query results.', 'Repeated hot reads with sub-millisecond latency → ElastiCache.'],
+    ['Amazon Redshift', 'Columnar data warehouse for SQL analytics over terabytes to petabytes.', 'BI dashboards and complex analytical queries.', 'Redshift Spectrum queries data directly in S3.'],
+    ['Amazon EMR', 'Managed Hadoop and Spark clusters for big data processing.', 'Large-scale ETL, machine learning data prep.', 'Run task nodes on Spot to cut cost.'],
+    ['Amazon Athena', 'Serverless SQL queries directly against data in S3. You pay per data scanned.', 'Ad-hoc queries on logs and data lakes.', 'Columnar formats (Parquet) and partitioning cut both cost and time.'],
+  ],
+  identity: [
+    ['AWS IAM (roles, policies, STS)', 'Controls who can do what. Roles hand out temporary STS credentials.', 'Every access decision in AWS.', 'Explicit deny always wins. Workloads use roles, never long-term keys.'],
+    ['AWS KMS', 'Managed encryption keys with key policies and CloudTrail audit of every use.', 'Encrypting EBS, S3, RDS and your own data.', 'Customer managed keys can be rotated automatically, disabled or scheduled for deletion.'],
+    ['AWS Secrets Manager', 'Stores secrets encrypted and rotates them automatically.', 'Database passwords and API keys.', 'Built-in rotation for RDS; Parameter Store has no native rotation.'],
+    ['AWS WAF', 'Layer 7 web firewall for CloudFront, ALB, API Gateway and AppSync.', 'Blocking SQL injection, XSS and request floods.', 'Rate-based rules throttle abusive IPs; managed rule groups need no rule-writing.'],
+    ['AWS Shield', 'DDoS protection. Standard is free and automatic; Advanced adds 24/7 response team and cost protection.', 'Internet-facing applications.', 'Large-scale DDoS with expert help and cost protection → Shield Advanced.'],
+    ['Amazon GuardDuty', 'Threat detection that analyses CloudTrail, VPC Flow Logs and DNS logs with machine learning.', 'Spotting compromised instances and credentials.', 'No agents to install. Findings can trigger EventBridge automation.'],
+    ['AWS Organizations', 'Manages many accounts with consolidated billing and Service Control Policies.', 'Multi-account governance.', 'SCPs set the maximum permissions; they never grant anything.'],
+  ],
+  messaging: [
+    ['Amazon CloudWatch', 'Metrics, logs, alarms and dashboards for everything you run.', 'Monitoring and automatic reactions to problems.', 'Alarms trigger SNS or Auto Scaling. Memory metrics need the CloudWatch agent.'],
+    ['AWS CloudTrail', 'Records every API call: who did what, when and from where.', 'Security audits and compliance.', 'Use an organization trail with log file integrity validation.'],
+    ['Amazon SQS', 'Fully managed message queue that decouples producers from consumers.', 'Buffering work and smoothing traffic spikes.', 'Standard = at-least-once; FIFO = ordered, exactly-once. Add a dead-letter queue.'],
+    ['Amazon SNS', 'Pub/sub service that pushes each message to many subscribers.', 'Fan-out and notifications (email, SMS, HTTP, SQS, Lambda).', 'SNS → SQS per consumer is the fan-out pattern. Filter policies route messages.'],
+    ['Amazon EventBridge', 'Serverless event bus that routes events by content from AWS, SaaS and your apps; also runs schedules.', 'Event-driven architectures and cron jobs.', 'SaaS partner events or content-based routing → EventBridge.'],
+    ['AWS Step Functions', 'Visual workflows that coordinate services with retries, branches, parallel steps and waits.', 'Order processing, ETL pipelines, human approvals.', 'Standard for long-running workflows (up to 1 year); Express for high-volume, short ones.'],
+  ],
+};
 const CONCEPT_CATEGORY = Object.fromEntries(CATEGORY_KEYS.flatMap((k) => CATEGORIES[k].concepts.map((c) => [c, k])));
 
 /* =====================================================================
@@ -1708,8 +1797,8 @@ function loadState() {
       tracked: { ...base.tracked, ...raw.tracked }, remediation: { ...base.remediation, ...raw.remediation },
       practice: { ...base.practice, ...raw.practice } };
     if (s.profile && LEGACY_LEVELS[s.profile.level]) s.profile = { ...s.profile, level: LEGACY_LEVELS[s.profile.level] };
-    // Baselines saved before the remediation categories existed: derive them from the answer items.
-    if (s.baseline && !s.baseline.byCategory) {
+    // Always re-derive category scores from the answer items, so saved baselines follow the current categories.
+    if (s.baseline?.items) {
       const byCategory = {};
       for (const it of s.baseline.items || []) {
         const cat = CONCEPT_CATEGORY[QUESTIONS.get(it.qid)?.concept];
@@ -2037,19 +2126,24 @@ function enqueue(event, sessionId, data) {
   flushOutbox();
 }
 
-/** Stream a progress event for the current learner (background, fire-and-forget). */
+/** Stream a progress event for the current learner (background, fire-and-forget, never throws). */
 function track(event, data) {
   if (!hasSession()) return;
-  enqueue(event, SESSION.id, { name: S.profile.name, ...data });
+  try { enqueue(event, SESSION.id, { name: S.profile.name, ...data }); }
+  catch (err) { console.warn('Tracking skipped:', err); }
 }
 
 function flushOutbox() {
   if (flushing) return;
   // One tab at a time, so two open tabs don't send the same event twice.
-  const run = () => drainOutbox();
-  if (navigator.locks?.request) navigator.locks.request('saaPortal.outbox', { ifAvailable: true }, (lock) => (lock ? run() : null));
-  else run();
+  const run = () => drainOutbox().catch((err) => { flushing = false; console.warn('Outbox flush failed:', err); });
+  try {
+    if (navigator.locks?.request) navigator.locks.request('saaPortal.outbox', { ifAvailable: true }, (lock) => (lock ? run() : null)).catch(() => run());
+    else run();
+  } catch { run(); }
 }
+// Last line of defence: an unexpected rejected promise (e.g. a dropped webhook call) is logged, never surfaced as a crash.
+window.addEventListener('unhandledrejection', (e) => { console.warn('Background task failed:', e.reason); e.preventDefault(); });
 
 async function drainOutbox() {
   if (flushing) return;
@@ -2219,7 +2313,10 @@ function readiness() {
   else if (score >= T) verdict = { tone: 'amber', text: 'Likely to pass — borderline', note: 'You are above the benchmark but without much margin. Retake the practice sets where you scored lowest and revisit your weakest category before booking.' };
   else if (score >= 0.6) verdict = { tone: 'orange', text: 'Not ready yet', note: 'You are below the 72% benchmark. Work through the Remediation Zone and Coaching Core for your weakest categories, then retake the practice sets.' };
   else verdict = { tone: 'rose', text: 'Significant gaps', note: 'Several domains need work. Rebuild the foundations with the masterclasses and drills before attempting more practice sets.' };
-  return { score, diag, remediation, practice, practiceAvg, setsCompleted: done.length, verdict };
+  // Binary readiness: every set done, overall ≥ 80%, and all four exam domains at or above the 72% benchmark.
+  const domains = domainTable().map((d) => ({ ...d, ready: d.n > 0 && d.pct >= T }));
+  const highlyReady = done.length === PRACTICE_SETS.length && score >= 0.8 && domains.every((d) => d.ready);
+  return { score, diag, remediation, practice, practiceAvg, setsCompleted: done.length, verdict, domains, highlyReady };
 }
 
 /* =====================================================================
@@ -2345,10 +2442,11 @@ function answerInputs(q, resp, ns, { reveal = false, skin = 'card' } = {}) {
         else if (p) { cls = sk.wrong; tag = '<span class="ml-auto shrink-0 self-center text-[11px] font-bold text-rose-500">YOUR PICK</span>'; }
         else cls = sk.dim;
       }
-      return `<label class="flex items-start gap-3 rounded-xl border-2 p-4 transition ${reveal ? '' : 'cursor-pointer'} ${cls}">
-        <input type="${multi ? 'checkbox' : 'radio'}" name="${ns}-${q.id}" data-pick="${i}" data-ns="${ns}" data-pos="${pos}" class="mt-1 h-4 w-4 shrink-0 ${sk.accent}" ${p ? 'checked' : ''} ${reveal ? 'disabled' : ''}>
-        ${t === 'tf' ? '' : `<span class="font-bold ${sk.letter}">${LETTERS[pos]}.</span>`}
-        <span class="text-sm leading-relaxed sm:text-[15px]">${esc(q.options[i])}</span>${tag}
+      const big = skin === 'stage';
+      return `<label class="flex items-start gap-3 rounded-xl border-2 ${big ? 'p-4 sm:p-5' : 'p-4'} transition ${reveal ? '' : 'cursor-pointer'} ${cls}">
+        <input type="${multi ? 'checkbox' : 'radio'}" name="${ns}-${q.id}" data-pick="${i}" data-ns="${ns}" data-pos="${pos}" class="${big ? 'mt-1 h-5 w-5' : 'mt-1 h-4 w-4'} shrink-0 ${sk.accent}" ${p ? 'checked' : ''} ${reveal ? 'disabled' : ''}>
+        ${t === 'tf' ? '' : `<span class="${big ? 'flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-white/10 text-sm' : ''} font-bold ${sk.letter}">${LETTERS[pos]}${big ? '' : '.'}</span>`}
+        <span class="${big ? 'text-base leading-relaxed sm:text-lg' : 'text-sm leading-relaxed sm:text-[15px]'}">${esc(q.options[i])}</span>${tag}
       </label>`;
     }).join('')}
   </fieldset>`;
@@ -2433,6 +2531,110 @@ function lockedPanel(phase, title, reason, cta, view) {
   </section>`;
 }
 
+/* ---------- Animated serverless web application diagram (SVG + CSS keyframes) ---------- */
+const SVL = {
+  nodes: {
+    users:      { x: 30,  y: 240, w: 92,  h: 70, color: '#94a3b8', label: 'Users', sub: 'Web & mobile', desc: 'People using the app from browsers and phones. They load the front end, sign in, then call the API with a token.' },
+    cloudfront: { x: 190, y: 80,  w: 170, h: 58, color: '#a78bfa', label: 'CloudFront', sub: 'Distribution', desc: 'The CDN. Serves the site from edge locations near each user and forwards /api calls to API Gateway. WAF and Shield attach here.' },
+    s3web:      { x: 190, y: 270, w: 170, h: 58, color: '#84cc16', label: 'Amazon S3', sub: 'Static website', desc: 'Holds the HTML, JavaScript and images. Kept private with Origin Access Control so only CloudFront can read it.' },
+    cognito:    { x: 190, y: 430, w: 170, h: 58, color: '#f43f5e', label: 'Cognito', sub: 'User Pool', desc: 'Signs users up and in (including Google or Apple) and issues JWT tokens that the API checks on every call.' },
+    role:       { x: 585, y: 40,  w: 180, h: 46, color: '#f59e0b', label: 'IAM role', sub: 'Lambda execution role', desc: 'Every Lambda function assumes an execution role that grants only what it needs, e.g. dynamodb:PutItem on one table. No access keys anywhere.' },
+    apigw:      { x: 435, y: 266, w: 125, h: 66, color: '#ec4899', label: 'API Gateway', sub: 'REST / HTTP API', desc: 'The front door of the API: validates tokens through the authorizer, throttles traffic and routes each method to a Lambda function.' },
+    authorizer: { x: 595, y: 150, w: 160, h: 50, color: '#f97316', label: 'λ Authorizer', sub: 'Validates the JWT', desc: 'A Lambda authorizer (or a Cognito authorizer) checks the token before any handler runs.' },
+    get:        { x: 595, y: 225, w: 160, h: 50, color: '#f97316', label: 'λ GET handler', sub: 'Reads items', desc: 'Reads data from DynamoDB and returns JSON. Scales to thousands of concurrent requests automatically.' },
+    post:       { x: 595, y: 300, w: 160, h: 50, color: '#f97316', label: 'λ POST handler', sub: 'Writes items', desc: 'Validates input, writes to DynamoDB and hands slow work to the processing function asynchronously.' },
+    processing: { x: 595, y: 375, w: 160, h: 50, color: '#f97316', label: 'λ Processing', sub: 'Async jobs', desc: 'Background work such as resizing images into the assets bucket. Can be fed by SQS, SNS or EventBridge to stay decoupled.' },
+    dynamodb:   { x: 820, y: 170, w: 155, h: 58, color: '#60a5fa', label: 'DynamoDB', sub: 'Tables', desc: 'Serverless key-value tables with millisecond latency. On-demand capacity follows traffic; PITR and Global Tables protect the data.' },
+    s3assets:   { x: 820, y: 330, w: 155, h: 58, color: '#84cc16', label: 'Amazon S3', sub: 'Assets bucket', desc: 'User uploads and generated files. Encrypted with SSE-KMS, versioned, and tiered by lifecycle rules.' },
+    cloudwatch: { x: 430, y: 552, w: 175, h: 48, color: '#e879f9', label: 'CloudWatch', sub: 'Logs · metrics · alarms', desc: 'Collects Lambda logs and metrics. Alarms on errors, throttles or latency fire notifications.' },
+    sns:        { x: 810, y: 552, w: 165, h: 48, color: '#fb7185', label: 'SNS', sub: 'Alert notifications', desc: 'Pushes CloudWatch alarms to email, SMS, chat or an on-call system the moment something breaks.' },
+  },
+  groups: [
+    { x: 12,  y: 200, w: 128, h: 150, color: '#94a3b8', label: 'Users layer' },
+    { x: 172, y: 40,  w: 206, h: 310, color: '#a78bfa', label: 'Front-end' },
+    { x: 172, y: 390, w: 206, h: 120, color: '#f43f5e', label: 'Authentication' },
+    { x: 405, y: 14,  w: 382, h: 506, color: '#f59e0b', label: 'IAM security scope', dash: '8 6' },
+    { x: 420, y: 112, w: 352, h: 395, color: '#ec4899', label: 'API layer' },
+    { x: 805, y: 120, w: 185, h: 300, color: '#60a5fa', label: 'Data layer' },
+    { x: 405, y: 530, w: 585, h: 82,  color: '#e879f9', label: 'Monitoring layer' },
+  ],
+  edges: [
+    { from: 'users', to: 'cloudfront', d: 'M122 262 C152 262 160 109 190 109', label: 'HTTPS', lx: 140, ly: 190 },
+    { from: 'users', to: 'cognito', d: 'M122 292 C152 292 160 459 190 459', label: 'sign in', lx: 132, ly: 392 },
+    { from: 'cloudfront', to: 's3web', d: 'M275 138 L275 270', label: 'static files', lx: 282, ly: 210 },
+    { from: 'cloudfront', to: 'apigw', d: 'M360 109 C402 109 398 288 435 288', label: '/api calls', lx: 368, ly: 175 },
+    { from: 'cognito', to: 'apigw', d: 'M360 459 C402 459 398 314 435 314', label: 'JWT token', lx: 364, ly: 420 },
+    { from: 'apigw', to: 'authorizer', d: 'M560 284 C580 284 574 175 595 175' },
+    { from: 'apigw', to: 'get', d: 'M560 294 C580 294 576 250 595 250' },
+    { from: 'apigw', to: 'post', d: 'M560 306 C580 306 578 325 595 325' },
+    { from: 'post', to: 'processing', d: 'M675 350 L675 375', label: 'async', lx: 682, ly: 366 },
+    { from: 'get', to: 'dynamodb', d: 'M755 250 C790 250 788 196 820 196', label: 'read', lx: 776, ly: 232 },
+    { from: 'post', to: 'dynamodb', d: 'M755 325 C796 325 790 208 820 208', label: 'write', lx: 790, ly: 290 },
+    { from: 'processing', to: 's3assets', d: 'M755 400 C790 400 790 359 820 359', label: 'store', lx: 774, ly: 395 },
+    { from: 'role', to: 'authorizer', d: 'M675 86 L675 150', label: 'assumes', lx: 682, ly: 122, kind: 'assume' },
+    { from: 'processing', to: 'cloudwatch', d: 'M595 410 C530 410 517 480 517 552', label: 'logs & metrics', lx: 526, ly: 505 },
+    { from: 'cloudwatch', to: 'sns', d: 'M605 576 L810 576', label: 'ALARM', lx: 688, ly: 568, kind: 'alert' },
+  ],
+  focus: {
+    compute: ['authorizer', 'get', 'post', 'processing'], storage: ['s3web', 's3assets'], networking: ['users', 'cloudfront', 'apigw'],
+    databases: ['dynamodb'], identity: ['cognito', 'role', 'authorizer'], messaging: ['cloudwatch', 'sns', 'processing'],
+  },
+};
+const diagramSel = {};          // transient: selected node per remediation card
+let diagramPaused = false;      // transient: pause the animated flows
+
+function serverlessDiagram(k) {
+  const focus = new Set(SVL.focus[k] || []), id = `svl-${k}`;
+  const lit = (n) => !focus.size || focus.has(n);
+  const groups = SVL.groups.map((g) => `<g>
+      <rect x="${g.x}" y="${g.y}" width="${g.w}" height="${g.h}" rx="14" fill="${g.color}" fill-opacity=".05" stroke="${g.color}" stroke-opacity=".55" stroke-dasharray="${g.dash || '4 5'}"/>
+      <text x="${g.x + 10}" y="${g.y + 16}" fill="${g.color}" font-size="10.5" font-weight="700" letter-spacing="1.2">${esc(g.label.toUpperCase())}</text></g>`).join('');
+  const edges = SVL.edges.map((e) => {
+    const on = lit(e.from) || lit(e.to);
+    const color = e.kind === 'alert' ? '#fb7185' : e.kind === 'assume' ? '#f59e0b' : '#38bdf8';
+    const cls = e.kind === 'alert' ? 'svl-fast' : 'svl-flow';
+    return `<g opacity="${on ? 1 : 0.3}">
+      ${e.kind === 'alert' ? `<path d="${e.d}" stroke="${color}" stroke-width="9" fill="none" stroke-linecap="round" class="svl-pulse" filter="url(#${id}-glow)"/>` : ''}
+      <path d="${e.d}" stroke="${color}" stroke-opacity=".25" stroke-width="2" fill="none"/>
+      <path d="${e.d}" stroke="${color}" stroke-width="${e.kind === 'alert' ? 3 : 2}" fill="none" stroke-linecap="round" class="${cls}" marker-end="url(#${id}-arrow-${e.kind || 'flow'})"/>
+      ${e.label ? `<text x="${e.lx}" y="${e.ly}" fill="${e.kind === 'alert' ? '#fecdd3' : '#cbd5e1'}" font-size="10" font-weight="${e.kind ? 700 : 500}" stroke="#020617" stroke-width="3" paint-order="stroke">${esc(e.label)}</text>` : ''}
+    </g>`;
+  }).join('');
+  const nodes = Object.entries(SVL.nodes).map(([n, d]) => {
+    const on = lit(n), f = focus.has(n), sel = diagramSel[k] === n;
+    return `<g data-action="svl-node" data-node="${n}" data-cat="${k}" role="button" tabindex="0" aria-label="${esc(`${d.label} ${d.sub}`)}" opacity="${on ? 1 : 0.45}" style="cursor:pointer">
+      <title>${esc(`${d.label} (${d.sub}): ${d.desc}`)}</title>
+      <rect x="${d.x}" y="${d.y}" width="${d.w}" height="${d.h}" rx="10" fill="#0b1220" stroke="${d.color}" stroke-width="${sel ? 3.5 : f ? 2.5 : 1.4}" ${f ? `filter="url(#${id}-glow)"` : ''}/>
+      <rect x="${d.x}" y="${d.y + 8}" width="4" height="${d.h - 16}" rx="2" fill="${d.color}"/>
+      <text x="${d.x + 14}" y="${d.y + d.h / 2 - 2}" fill="#f1f5f9" font-size="13" font-weight="700">${esc(d.label)}</text>
+      <text x="${d.x + 14}" y="${d.y + d.h / 2 + 13}" fill="#94a3b8" font-size="10.5">${esc(d.sub)}</text>
+      ${n === 'sns' ? `<circle cx="${d.x + d.w - 14}" cy="${d.y + 14}" r="5" fill="#fb7185" class="svl-pulse"/>` : ''}
+      ${['authorizer', 'get', 'post', 'processing'].includes(n) ? `<text x="${d.x + d.w - 18}" y="${d.y + 17}" font-size="11" fill="#f59e0b" aria-hidden="true">⚿</text>` : ''}
+    </g>`;
+  }).join('');
+  const marker = (name, color) => `<marker id="${id}-arrow-${name}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="${color}"/></marker>`;
+  const sel = diagramSel[k] && SVL.nodes[diagramSel[k]];
+  return `
+  <div class="${diagramPaused ? 'svl-paused' : ''}">
+    <div class="thin-scroll overflow-x-auto rounded-xl border border-slate-800 bg-slate-950">
+      <svg viewBox="0 0 1000 620" class="block w-full min-w-[700px]" role="img" aria-labelledby="${id}-title" font-family="Inter, ui-sans-serif, system-ui, sans-serif">
+        <title id="${id}-title">Serverless web application architecture: users, CloudFront and S3 front end, Cognito authentication, API Gateway with Lambda functions inside an IAM security scope, DynamoDB and S3 data layer, CloudWatch alarms to SNS. Highlighted: ${esc(CATEGORIES[k].name)}.</title>
+        <defs>
+          <filter id="${id}-glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          ${marker('flow', '#38bdf8')}${marker('assume', '#f59e0b')}${marker('alert', '#fb7185')}
+        </defs>
+        ${groups}${edges}${nodes}
+      </svg>
+    </div>
+    <div class="mt-2 flex flex-wrap items-start justify-between gap-3">
+      <p class="min-w-0 flex-1 text-xs leading-relaxed ${ui.muted}" aria-live="polite">${sel
+        ? `<b class="text-slate-700 dark:text-slate-200">${esc(sel.label)} · ${esc(sel.sub)}:</b> ${esc(sel.desc)}`
+        : `Glowing parts belong to <b>${esc(CATEGORIES[k].name)}</b>. Click any component to see what it does.`}</p>
+      <button data-action="svl-pause" class="${B('secondary', '!px-2.5 !py-1 text-xs')}">${diagramPaused ? '▶ Play flows' : '❚❚ Pause flows'}</button>
+    </div>
+  </div>`;
+}
+
 /* ---------- Phase 3: Personalised Remediation Zone ---------- */
 function remediationCard(k, required) {
   const c = CATEGORIES[k], t = S.baseline?.byCategory?.[k], done = !!S.remediation.mastered[k];
@@ -2444,7 +2646,7 @@ function remediationCard(k, required) {
         <div><h2 class="text-lg font-bold">${c.name}</h2><p class="text-xs ${ui.muted}">${c.blurb}</p></div>
       </div>
       <div class="text-right">
-        ${done ? badge('resolved') : required ? badge('stuck') : badge('solid')}
+        ${done ? badge('resolved') : required ? '<span class="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-rose-600 px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide text-white">⚠ Must Master</span>' : badge('solid')}
         <div class="mt-1 font-mono text-xs ${masteryText(p)}">Diagnostic ${t ? `${t.c}/${t.n} · ${fmtPct(p)}` : '—'}</div>
       </div>
     </div>
@@ -2461,8 +2663,22 @@ function remediationCard(k, required) {
       <p class="mt-1 text-sm leading-relaxed text-sky-950 dark:text-sky-100">${esc(c.example)}</p>
     </div>
 
-    <div class="${ui.label} mt-6">Architecture diagram: secure data flow</div>
-    <pre class="thin-scroll mt-2 overflow-x-auto rounded-xl border border-slate-800 bg-slate-950 p-4 font-mono text-[11.5px] leading-5 text-emerald-300 sm:text-xs" role="img" aria-label="${esc(c.name)} reference architecture">${esc(c.diagram.replace(/^\n/, ''))}</pre>
+    <div class="${ui.label} mt-6">Every ${esc(c.name)} service, in plain language</div>
+    <div class="mt-3 grid gap-3 md:grid-cols-2">
+      ${(SERVICE_GUIDE[k] || []).map(([name, what, use, tip]) => `<div class="rounded-xl border border-slate-200 p-3.5 text-sm dark:border-slate-700">
+        <div class="font-semibold">${esc(name)}</div>
+        <p class="mt-1 leading-relaxed">${esc(what)}</p>
+        <p class="mt-1.5 text-xs leading-relaxed ${ui.muted}"><b class="text-slate-600 dark:text-slate-300">Use it for:</b> ${esc(use)}</p>
+        <p class="mt-1 text-xs leading-relaxed text-amber-700 dark:text-amber-300"><b>Exam tip:</b> ${esc(tip)}</p>
+      </div>`).join('')}
+    </div>
+
+    <div class="${ui.label} mt-6">Interactive architecture: serverless web application data flow</div>
+    <div class="mt-2">${serverlessDiagram(k)}</div>
+    <details class="mt-3">
+      <summary class="cursor-pointer text-xs font-semibold text-amber-600 dark:text-amber-400">Text diagram: ${esc(c.name)} reference architecture</summary>
+      <pre class="thin-scroll mt-2 overflow-x-auto rounded-xl border border-slate-800 bg-slate-950 p-4 font-mono text-[11.5px] leading-5 text-emerald-300 sm:text-xs" aria-label="${esc(c.name)} reference architecture">${esc(c.diagram.replace(/^\n/, ''))}</pre>
+    </details>
 
     <div class="mt-5 flex flex-wrap items-center gap-2">
       <span class="text-xs ${ui.muted}">Masterclasses:</span>
@@ -2497,7 +2713,7 @@ function viewRemediation() {
   <section class="${ui.card} mb-6">
     <div class="${ui.label}">Diagnostic score by category (lowest first)</div>
     <div class="mt-3 space-y-2.5">
-      ${rows.map(({ k, t }) => { const p = t.c / t.n; return `<div class="grid grid-cols-[150px_1fr_70px] items-center gap-3 text-sm" title="${esc(CATEGORIES[k].name)}: ${t.c} of ${t.n} correct">
+      ${rows.map(({ k, t }) => { const p = t.c / t.n; return `<div class="grid grid-cols-[minmax(0,200px)_1fr_56px] items-center gap-3 text-sm" title="${esc(CATEGORIES[k].name)}: ${t.c} of ${t.n} correct">
         <span class="truncate font-medium">${CATEGORIES[k].icon} ${CATEGORIES[k].name}</span>${bar(p, p < T ? 'bg-rose-500' : p < 0.85 ? 'bg-amber-500' : 'bg-emerald-500')}
         <span class="text-right font-mono text-xs ${masteryText(p)}">${fmtPct(p)}</span></div>`; }).join('')}
     </div>
@@ -2585,6 +2801,35 @@ function practiceList() {
   ${setsDone() === PRACTICE_SETS.length ? `<div class="mt-8 text-center"><button data-action="nav" data-view="result" class="${B('primary')}">See your Certification Readiness Score →</button></div>` : ''}`;
 }
 
+/** Per-question countdown: 2:00 budget per question, then overtime in red. Frozen once the answer is locked. */
+function qClock(a, q) {
+  const budget = SECONDS_PER_QUESTION * 1000, spent = a.qTime?.[q.id] || 0, left = budget - spent;
+  const pctLeft = Math.max(0, Math.min(100, (left / budget) * 100));
+  if (a.locked[q.id] !== undefined) return { text: `✓ ${fmtClock(spent)}`, cls: 'bg-white/10 text-slate-300', bar: 'bg-slate-500', pct: pctLeft };
+  if (left <= 0) return { text: `Time's up +${fmtClock(-left)}`, cls: 'bg-rose-600 text-white', bar: 'bg-rose-500', pct: 0 };
+  return { text: fmtClock(left + 999), cls: left < 30000 ? 'bg-amber-500 text-slate-900' : 'bg-white/10 text-white', bar: left < 30000 ? 'bg-amber-400' : 'bg-red-600', pct: pctLeft };
+}
+
+/** Every option marked correct or incorrect, with the reason, in the order the learner saw them. */
+function answerBreakdown(q, resp) {
+  if (qType(q) === 'fill') {
+    const ok = isCorrect(q, resp);
+    return `<ul class="mt-2 space-y-2">
+      <li class="rounded-lg bg-emerald-500/10 px-3 py-2"><b class="text-emerald-400">✓ Expected:</b> ${esc(q.key)} <span class="text-slate-400">(also accepted: ${esc(q.accept.join(', '))})</span></li>
+      <li class="rounded-lg ${ok ? 'bg-emerald-500/10' : 'bg-rose-500/10'} px-3 py-2"><b class="${ok ? 'text-emerald-400' : 'text-rose-400'}">${ok ? '✓' : '✗'} Your answer:</b> ${esc(responseText(q, resp, 80))}</li></ul>`;
+  }
+  const keySet = qType(q) === 'multi' ? q.answer : [q.answer];
+  const picked = (i) => (Array.isArray(resp) ? resp.includes(i) : resp === i);
+  return `<ul class="mt-2 space-y-2">${optionOrder(q).map((i, pos) => {
+    const right = keySet.includes(i);
+    const note = right ? 'Correct: this meets every requirement in the scenario.' : (q.eliminate?.[i] || 'Incorrect: it does not meet the scenario\'s requirements.');
+    return `<li class="rounded-lg px-3 py-2 ${right ? 'bg-emerald-500/10' : 'bg-white/[.04]'}">
+      <div class="flex items-start gap-2"><span class="font-bold ${right ? 'text-emerald-400' : 'text-rose-400'}">${right ? '✓' : '✗'}</span>
+        <span><b class="text-white">${qType(q) === 'tf' ? '' : `${LETTERS[pos]}. `}${esc(clip(q.options[i], 120))}</b>${picked(i) ? ' <span class="rounded bg-white/15 px-1.5 text-[10px] font-bold uppercase">your pick</span>' : ''}
+        <span class="mt-0.5 block text-xs text-slate-400">${esc(note)}</span></span></div></li>`;
+  }).join('')}</ul>`;
+}
+
 function practicePlayer() {
   const a = S.practice.active, s = setById(a.set), order = setOrder(a.set), q = practiceQ();
   const target = s.questions.length * SECONDS_PER_QUESTION * 1000;
@@ -2607,19 +2852,22 @@ function practicePlayer() {
           <div class="truncate text-sm font-semibold">AWS SAA-C03 Practice Set ${s.n}: ${esc(s.title)}</div>
           <div class="text-xs text-slate-400">${esc(CONFIG.ownerName)} · Question ${a.index + 1} of ${order.length}</div>
         </div>
-        <div class="flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 font-mono text-sm" title="Elapsed / target time at real exam pace">
-          <span class="h-2 w-2 animate-pulse rounded-full bg-red-500" aria-hidden="true"></span>
-          <span id="yt-time" class="tabular-nums">${fmtClock(a.elapsedMs)}</span><span class="text-slate-500">/ ${fmtClock(target)}</span>
+        <div class="flex shrink-0 flex-col items-end gap-1">
+          <div id="yt-qclock" class="flex items-center gap-2 rounded-full px-3 py-1.5 font-mono text-sm font-bold tabular-nums ${qClock(a, q).cls}" title="Time left for this question (${fmtClock(SECONDS_PER_QUESTION * 1000)} each, real exam pace)">
+            <span class="h-2 w-2 animate-pulse rounded-full bg-red-500" aria-hidden="true"></span><span id="yt-qtime">${qClock(a, q).text}</span>
+          </div>
+          <div class="font-mono text-[11px] text-slate-400" title="Total time on this set">Set <span id="yt-time">${fmtClock(a.elapsedMs)}</span> / ${fmtClock(target)}</div>
         </div>
       </header>
+      <div class="h-1 bg-white/10" aria-hidden="true"><div id="yt-qbar" class="h-full transition-[width] duration-1000 ease-linear ${qClock(a, q).bar}" style="width:${qClock(a, q).pct}%"></div></div>
 
-      <div class="min-h-[420px] px-5 py-7 sm:px-10 sm:py-9 fade-in">
-        <div class="flex flex-wrap items-center gap-2 text-[11px] font-bold uppercase tracking-wider">
+      <div class="mx-auto min-h-[420px] max-w-3xl px-5 py-8 sm:px-10 sm:py-10 fade-in">
+        <div class="flex flex-wrap items-center justify-center gap-2 text-[11px] font-bold uppercase tracking-wider">
           <span class="rounded bg-red-600 px-2 py-0.5 text-white">Q${a.index + 1}</span>
           <span class="rounded bg-white/10 px-2 py-0.5 text-slate-300">${typeLabel(q)}</span>
           <span class="rounded bg-white/10 px-2 py-0.5 text-slate-300">${DOMAINS[q.domain].short}</span>
         </div>
-        <p class="mt-4 text-lg font-semibold leading-relaxed text-white sm:text-xl">${esc(q.scenario)}</p>
+        <p class="mt-5 text-center text-xl font-semibold leading-relaxed text-white sm:text-2xl sm:leading-relaxed">${esc(q.scenario)}</p>
         ${answerInputs(q, resp, 'prac', { reveal: isLocked, skin: 'stage' })}
         ${isLocked ? `<div class="mt-5 flex flex-wrap items-center gap-3 rounded-xl px-4 py-3 ${ok ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'}">
           <span class="text-lg font-bold">${ok ? '✓ Correct' : '✗ Incorrect'}</span>
@@ -2656,7 +2904,7 @@ function practicePlayer() {
         <div class="thin-scroll flex-1 space-y-5 overflow-y-auto px-5 py-5 text-sm leading-relaxed text-slate-200">
           <div><div class="text-[11px] font-bold uppercase tracking-wider text-emerald-400">Correct answer</div><p class="mt-1 font-semibold text-white">${esc(keyText(q, 400))}</p></div>
           <div><div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Why it is right</div><p class="mt-1">${esc(q.proof)}</p></div>
-          ${q.eliminate ? `<div><div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Why the others are wrong</div>${eliminationList(q, 'stage')}</div>` : ''}
+          <div><div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Answer breakdown: correct vs. incorrect</div>${answerBreakdown(q, isLocked ? lockedResp : undefined)}</div>
           ${q.trigger ? `<div class="rounded-lg bg-red-500/10 px-3 py-2 text-red-200"><b>Exam trigger:</b> ${esc(q.trigger)}</div>` : ''}
           <button data-action="open-drawer" data-concept="${q.concept}" class="${ctl} !bg-white/10">Master ${esc(CONCEPTS[q.concept].name)} →</button>
         </div>
@@ -2754,6 +3002,11 @@ function viewResult() {
   <div class="grid gap-6 lg:grid-cols-[340px_1fr]">
     <section class="${ui.card} flex flex-col items-center text-center">
       ${ring(r.score, tone)}
+      <div class="mt-4 w-full rounded-xl border-2 px-4 py-3 ${r.highlyReady ? 'border-emerald-500 bg-emerald-500/10' : 'border-rose-500/70 bg-rose-500/10'}">
+        <div class="text-[11px] font-bold uppercase tracking-wider ${ui.muted}">Highly ready to clear the live exam?</div>
+        <div class="mt-1 text-3xl font-extrabold ${r.highlyReady ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}">${r.highlyReady ? '✓ YES' : '✗ NOT YET'}</div>
+        <div class="mt-1 text-xs ${ui.muted}">Requires all ${PRACTICE_SETS.length} sets, ≥ 80% readiness and every exam domain ≥ ${Math.round(T * 100)}%.</div>
+      </div>
       <div class="mt-4 rounded-xl border px-4 py-3 ${toneCls}">
         <div class="text-lg font-bold">${esc(r.verdict.text)}</div>
         <p class="mt-1 text-sm leading-relaxed opacity-90">${esc(r.verdict.note)}</p>
@@ -2763,6 +3016,20 @@ function viewResult() {
     </section>
 
     <div class="space-y-6">
+      <section class="${ui.card}">
+        <h2 class="text-lg font-semibold">Performance across the 4 SAA-C03 exam domains</h2>
+        <p class="text-xs ${ui.muted}">Weighted as on the real exam. Every scored answer counts: diagnostic, drills and practice sets.</p>
+        <div class="mt-4 grid gap-3 sm:grid-cols-2">
+          ${r.domains.map((d) => `<div class="rounded-xl border p-4 ${d.ready ? 'border-emerald-400/60' : d.n ? 'border-rose-400/60' : 'border-slate-200 dark:border-slate-700'}" title="${esc(d.name)}: ${d.c}/${d.n} correct">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0"><div class="text-sm font-semibold leading-snug">${esc(d.name)}</div><div class="text-xs ${ui.muted}">${d.weight}% of the exam · ${d.n} answers</div></div>
+              <span class="shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${d.ready ? 'bg-emerald-600 text-white' : d.n ? 'bg-rose-600 text-white' : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'}">${d.ready ? '✓ READY' : d.n ? '✗ NOT READY' : 'NO DATA'}</span>
+            </div>
+            <div class="mt-3 flex items-center gap-3"><div class="flex-1">${bar(d.pct, d.pct == null ? 'bg-slate-300' : d.pct >= T ? 'bg-emerald-500' : 'bg-rose-500')}</div><span class="font-mono text-sm font-bold">${fmtPct(d.pct)}</span></div>
+          </div>`).join('')}
+        </div>
+      </section>
+
       <section class="${ui.card}">
         <h2 class="text-lg font-semibold">How the score is built</h2>
         <div class="mt-4 grid gap-5 sm:grid-cols-3">
@@ -2802,6 +3069,11 @@ function sendFinalReport(auto) {
     topicsMastered: Object.keys(S.remediation.mastered).map((k) => CATEGORIES[k]?.name).filter(Boolean),
     strengths: cats.filter((c) => c.pct >= 0.85).map((c) => `${c.name} ${Math.round(c.pct * 100)}%`),
     weakAreas: cats.filter((c) => c.pct < T).map((c) => `${c.name} ${Math.round(c.pct * 100)}%`),
+    examReady: r.highlyReady,
+    domains: r.domains.map((d) => `${d.short} ${d.n ? `${Math.round(d.pct * 100)}% ${d.ready ? 'READY' : 'NOT READY'}` : 'no data'}`),
+    setScores: PRACTICE_SETS.map((s) => `Set ${s.n}: ${S.practice.results[s.n] ? `${Math.round(S.practice.results[s.n].pct * 100)}%` : '—'}`),
+    answered: S.attempts.filter((a) => !a.retry).length,
+    studyMinutes: Math.round(Object.values(S.practice.results).reduce((t, x) => t + (x.durationSec || 0), 0) / 60),
   });
   S.tracked.final = Date.now();
   persist();
@@ -2813,7 +3085,7 @@ function startPracticeSet(n) {
   const cur = S.practice.active;
   if (cur && cur.set !== n && Object.keys(cur.locked).length
     && !confirm(`Set ${cur.set} is in progress (${Object.keys(cur.locked).length} answered). Abandon it and start Set ${n}?`)) return;
-  S.practice.active = { set: n, index: 0, picks: {}, locked: {}, elapsedMs: 0, startedAt: Date.now() };
+  S.practice.active = { set: n, index: 0, picks: {}, locked: {}, qTime: {}, elapsedMs: 0, startedAt: Date.now() };
   S.practice.mode = 'play'; explainOpen = false;
   persist(); render(); window.scrollTo({ top: 0 });
 }
@@ -2866,8 +3138,22 @@ setInterval(() => {
   const a = S.practice.active;
   if (!a || S.view !== 'practice' || S.practice.mode !== 'play' || document.hidden || !hasSession()) return;
   a.elapsedMs += dt;
+  const q = practiceQ();
+  if (q && a.locked[q.id] === undefined) {
+    a.qTime ??= {};
+    const before = a.qTime[q.id] || 0;
+    a.qTime[q.id] = before + dt;
+    if (before < SECONDS_PER_QUESTION * 1000 && a.qTime[q.id] >= SECONDS_PER_QUESTION * 1000) toast('Time\'s up for this question. Lock in your best answer.', 'amber');
+  }
   const el = document.getElementById('yt-time');
   if (el) el.textContent = fmtClock(a.elapsedMs);
+  if (q) {
+    const c = qClock(a, q), pill = document.getElementById('yt-qclock'), bar = document.getElementById('yt-qbar');
+    const txt = document.getElementById('yt-qtime');
+    if (txt) txt.textContent = c.text;
+    if (pill) pill.className = pill.className.replace(/bg-(white\/10|rose-600|amber-500) text-(white|slate-300|slate-900)/, c.cls);
+    if (bar) { bar.style.width = `${c.pct}%`; bar.className = bar.className.replace(/bg-(red-600|amber-400|rose-500|slate-500)/, c.bar); }
+  }
   if (Math.floor(a.elapsedMs / 1000) % 15 === 0) persist();
 }, 1000);
 
@@ -3325,7 +3611,27 @@ function renderNav() {
   $('#header-status').innerHTML = `<span class="${ui.muted}">${esc(name)}</span>${o.n ? `<span class="rounded-full bg-amber-500/15 px-2 py-0.5 font-mono font-semibold text-amber-700 dark:text-amber-300">${fmtPct(o.weighted)}</span>` : ''}`;
 }
 
+/** Error boundary: a failure while drawing a view shows a recovery card instead of a blank page. */
 function render() {
+  try {
+    renderUnsafe();
+  } catch (err) {
+    console.error('Render failed:', err);
+    const target = hasSession() ? $('#view') : $('#gate');
+    if (!target) return;
+    if (hasSession()) { $('#shell').hidden = false; $('#shell').inert = false; }
+    target.innerHTML = `<section class="${ui.card} mx-auto my-10 max-w-lg text-center">
+      <div class="text-3xl" aria-hidden="true">🛠️</div>
+      <h1 class="mt-2 text-lg font-bold">This section hit a snag</h1>
+      <p class="mt-1 text-sm ${ui.muted}">Your progress is saved in this browser. Try another section, or reload the page.</p>
+      <div class="mt-5 flex justify-center gap-2">
+        ${hasSession() ? `<button data-action="nav" data-view="welcome" class="${B('secondary')}">Go to Identity</button>` : ''}
+        <button data-action="reload" class="${B('primary')}">Reload</button>
+      </div></section>`;
+  }
+}
+
+function renderUnsafe() {
   const locked = !hasSession();
   const shell = $('#shell'), gate = $('#gate');
   shell.hidden = locked; shell.inert = locked; gate.hidden = !locked;
@@ -3352,7 +3658,7 @@ document.addEventListener('click', (e) => {
   const el = e.target.closest('[data-action]');
   if (!el || el.disabled) return;
   const a = el.dataset.action, ds = el.dataset;
-  if (!hasSession() && a !== 'theme') return;   // only Step 1 is usable before onboarding
+  if (!hasSession() && a !== 'theme' && a !== 'reload') return;   // only Step 1 is usable before onboarding
   switch (a) {
     case 'nav': go(ds.view); break;
     case 'theme': S.theme = S.theme === 'light' ? 'dark' : 'light'; applyTheme(); persist(); break;
@@ -3386,6 +3692,12 @@ document.addEventListener('click', (e) => {
     case 'practice-explain': explainOpen = !explainOpen; render(); break;
     case 'practice-finish': finishPracticeSet(); break;
     case 'send-report': sendFinalReport(false); break;
+    case 'svl-node':
+      diagramSel[ds.cat] = diagramSel[ds.cat] === ds.node ? null : ds.node; render();
+      document.querySelector(`[data-action="svl-node"][data-cat="${ds.cat}"][data-node="${ds.node}"]`)?.focus({ preventScroll: true });
+      break;
+    case 'svl-pause': diagramPaused = !diagramPaused; render(); break;
+    case 'reload': location.reload(); break;
     case 'open-drawer': openDrawer(ds.concept); break;
     case 'close-drawer': closeDrawer(); break;
     case 'clear-link': delete S.links[ds.concept]; persist(); renderDrawer(); toast('Training link cleared.'); break;
@@ -3474,6 +3786,8 @@ document.addEventListener('submit', (e) => {
 
 document.addEventListener('keydown', (e) => {
   if (!hasSession()) return;
+  const svlNode = e.target.closest?.('[data-action="svl-node"]');
+  if (svlNode && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); svlNode.dispatchEvent(new MouseEvent('click', { bubbles: true })); return; }
   if (e.key === 'Escape' && drawerConcept) { e.preventDefault(); closeDrawer(); return; }
   if (drawerConcept || e.ctrlKey || e.metaKey || e.altKey || $('#settings').open) return;
   const tag = e.target.tagName;

@@ -17,10 +17,31 @@ You can also double-click `index.html`. Everything works, **except** YouTube emb
 1. **Identity (Phase 1, required).** Full name, AWS experience level and target exam date. Until this is submitted, nothing else renders. See *Onboarding gate* below.
 2. **Diagnostic (Phase 2).** A 20-question pool in four styles: multiple choice, choose-two multi-select, true/false, and fill in the blank. Question order and answer choices are reshuffled (Fisher-Yates, Web Crypto RNG) on every page load. Answers are stored against the original option indices, so scoring never drifts. You get no feedback until you submit.
 3. **Analytics Hub.** Domain tracking table, a heatmap of domain × skill area, the Blind Spot Report (any concept below 72%, which is roughly 720/1000), a concept tracking table and an answer log.
-4. **Remediation Zone (Phase 3).** The diagnostic is scored across Compute, Storage, Networking, Identity & Security and Databases. Each category below 72% gets step-by-step rules, a production example and an ASCII architecture diagram. **Practice exams stay locked until every weak topic is marked "Mastered".** A retake re-locks topics that are weak again.
+4. **Remediation Zone (Phase 3).** The diagnostic is scored across six categories: Compute, Storage, Networking, Databases & Analytics, Security & Identity, and Management & Messaging. Each category below 72% is flagged **Must Master**. Every category covers each blueprint service in plain language (what it is, when to use it, an exam tip), step-by-step rules and a production example. Each also has an **animated serverless web application diagram**: an SVG whose data flows move using CSS `stroke-dashoffset` keyframes, with the category's components highlighted. Click a component to see what it does. The diagram covers:
+   - Users
+   - CloudFront and the S3 static website
+   - Cognito
+   - API Gateway and the Lambda functions, inside the IAM security scope with the execution role
+   - DynamoDB and the S3 assets bucket
+   - CloudWatch, pulsing alerts to SNS
+
+   **Practice exams stay locked until every weak topic is marked "Mastered".**
 5. **Coaching Core.** Adaptive drills with the Instant Tutor and the **Master It** masterclass drawer.
-6. **Practice Exams (Phase 4).** Six exam-style sets of 10 questions each, in a video-player layout with a running timer (2 minutes per question), a question timeline, "Lock answer" and a slide-out explanation pane. Finishing a set sends a `practice_complete` event.
-7. **Final Result (Phase 5).** Certification Readiness Score = diagnostic 20% + remediation 10% + practice sets 70% (unfinished sets count as 0%). Shows a score ring, strengths and weaknesses by category, and a pass-likelihood verdict. The full training summary is sent automatically when all six sets are done, and can be re-sent with a button.
+6. **Practice Exams (Phase 4).** Six exam-style sets of 10 questions each, in a YouTube-style player:
+   - a centered question and large choices;
+   - a 2:00 countdown per question that turns red with overtime;
+   - a question timeline and "Lock answer";
+   - a slide-out explanation canvas marking every option correct or incorrect.
+
+   Finishing a set sends a `practice_complete` event.
+7. **Final Result (Phase 5).** Certification Readiness Score = diagnostic 20% + remediation 10% + practice sets 70% (unfinished sets count as 0%). It shows:
+   - each of the **4 exam domains** with a READY / NOT READY indicator;
+   - a binary **"Highly ready to clear the live exam: YES / NOT YET"**;
+   - strengths and weaknesses by category.
+
+   The full learning-history report is sent automatically when all six sets are done, and can be re-sent with a button. It includes domains, set scores, mastered topics, strengths, weak areas, answers and time.
+
+Rendering runs inside an error boundary: if a view fails, the learner sees a recovery card instead of a blank page. Tracking never throws into the UI.
 
 Mastery counts only your **first** answer each time a scenario is served. Retries are logged but not scored.
 
