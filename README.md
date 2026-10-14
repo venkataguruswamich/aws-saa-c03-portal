@@ -44,16 +44,26 @@ You can also double-click `index.html`. Everything works, **except** YouTube emb
 
    The full learning-history report is sent automatically when all six sets are done, and can be re-sent with a button. It includes domains, set scores, mastered topics, strengths, weak areas, answers and time.
 
-8. **Self-Healing Security (master module).** This module covers Automated Security Remediation & Self-Healing Architecture. It is also linked from the Remediation Zone. It includes:
-   - an animated pipeline diagram with the Remediation Zone boundary;
-   - an ASCII architecture map;
-   - two step-by-step event traces: a public S3 bucket, and unauthorized API calls from a compromised EC2 instance;
-   - an account-boundary model;
-   - an exam-level reference for 21 services in groups A–F;
-   - isolation, idempotency and retry best practices;
-   - tested reference code: an EventBridge pattern, a Python Lambda, and an IAM trust policy and permissions policy.
+8. **AWS Reference Notes.** A tabbed dashboard of nine topics:
+   - VPC & Networking Tiers
+   - EC2 & Linux Patching / SysAdmin
+   - Lambda & Serverless Compute
+   - RDS & Database Clustering
+   - API Gateway & Cognito Identity
+   - S3 & Asset Storage Architecture
+   - Security Services & IAM Scopes
+   - EKS, ECS, Docker & Git Workflows
+   - IaC (CloudFormation & Terraform)
 
-   **Download as Markdown** exports the whole guide.
+   Every topic has:
+   - key-number tiles;
+   - an **animated SVG cloud architecture diagram** coloured with AWS icon category colours (orange compute/Lambda, blue database/RDS, green storage/S3, crimson security/IAM, purple networking, pink management). Click a component to see its role;
+   - a responsive HTML tier breakdown of the same diagram, which stacks on phones;
+   - core concepts, exam traps, and copy-ready code (CLI, JSON policies, Dockerfile, CloudFormation YAML, Terraform HCL).
+
+   Each Remediation Zone card links to the matching notes. **Download all notes** exports the nine topics as Markdown.
+
+   The notes are defined in the `NOTES` array in `index.html`. A diagram edge without an explicit `d` path is routed automatically between its two nodes.
 
 Rendering runs inside an error boundary: if a view fails, the learner sees a recovery card instead of a blank page. Tracking never throws into the UI.
 

@@ -3194,7 +3194,7 @@ const STEPS = [
   { view: 'coach',       n: 5, title: 'Coaching Core',     sub: 'Drills, tutor & masterclasses' },
   { view: 'practice',    n: 6, title: 'Practice Exams',    sub: '6 exams × 25 questions, timed' },
   { view: 'result',      n: 7, title: 'Final Result',      sub: 'Certification readiness score' },
-  { view: 'selfheal',    n: 8, title: 'Self-Healing Security', sub: 'Master module: auto-remediation' },
+  { view: 'notes',       n: 8, title: 'Reference Notes',   sub: '9 AWS topics · architecture diagrams' },
 ];
 function stepState(v) {
   if (v === 'welcome') return S.profile ? 'done' : 'open';
@@ -3542,7 +3542,8 @@ function archDiagram(spec, key, { focus = [], title = '', hint = '' } = {}) {
   const boundary = b ? `<g>
       <line x1="${b.x}" y1="${b.y1}" x2="${b.x}" y2="${b.y2}" stroke="#f43f5e" stroke-width="3" stroke-dasharray="10 7" class="svl-flow"/>
       <text transform="translate(${b.x - 6} ${(b.y1 + b.y2) / 2}) rotate(-90)" text-anchor="middle" fill="#fda4af" font-size="11" font-weight="800" letter-spacing="2" stroke="#020617" stroke-width="4" paint-order="stroke">${esc(b.label)}</text></g>` : '';
-  const edges = spec.edges.map((e) => {
+  const edges = spec.edges.map((raw) => {
+    const e = raw.d ? raw : { ...autoEdge(spec.nodes[raw.from], spec.nodes[raw.to]), ...raw };
     const on = lit(e.from) || lit(e.to);
     const color = e.kind === 'alert' ? '#fb7185' : e.kind === 'assume' ? '#f59e0b' : '#38bdf8';
     const cls = e.kind === 'alert' ? 'svl-fast' : 'svl-flow';
@@ -3550,7 +3551,7 @@ function archDiagram(spec, key, { focus = [], title = '', hint = '' } = {}) {
       ${e.kind === 'alert' ? `<path d="${e.d}" stroke="${color}" stroke-width="9" fill="none" stroke-linecap="round" class="svl-pulse" filter="url(#${id}-glow)"/>` : ''}
       <path d="${e.d}" stroke="${color}" stroke-opacity=".25" stroke-width="2" fill="none"/>
       <path d="${e.d}" stroke="${color}" stroke-width="${e.kind === 'alert' ? 3 : 2}" fill="none" stroke-linecap="round" class="${cls}" marker-end="url(#${id}-arrow-${e.kind || 'flow'})"/>
-      ${e.label ? `<text x="${e.lx}" y="${e.ly}" fill="${e.kind === 'alert' ? '#fecdd3' : '#cbd5e1'}" font-size="10" font-weight="${e.kind ? 700 : 500}" stroke="#020617" stroke-width="3" paint-order="stroke">${esc(e.label)}</text>` : ''}
+      ${e.label ? `<text x="${e.lx}" y="${e.ly}" text-anchor="${e.anchor || 'start'}" fill="${e.kind === 'alert' ? '#fecdd3' : '#cbd5e1'}" font-size="10" font-weight="${e.kind ? 700 : 500}" stroke="#020617" stroke-width="3" paint-order="stroke">${esc(e.label)}</text>` : ''}
     </g>`;
   }).join('');
   const nodes = Object.entries(spec.nodes).map(([n, d]) => {
@@ -3588,6 +3589,18 @@ function archDiagram(spec, key, { focus = [], title = '', hint = '' } = {}) {
   </div>`;
 }
 
+/** Edge geometry between two nodes when a spec gives no explicit path: side to side, or top to bottom. */
+function autoEdge(a, b) {
+  if (b.x >= a.x + a.w + 8 || a.x >= b.x + b.w + 8) {
+    const right = b.x >= a.x + a.w + 8;
+    const x1 = right ? a.x + a.w : a.x, x2 = right ? b.x : b.x + b.w, y1 = a.y + a.h / 2, y2 = b.y + b.h / 2, m = (x1 + x2) / 2;
+    return { d: `M${x1} ${y1} C${m} ${y1} ${m} ${y2} ${x2} ${y2}`, lx: m, ly: (y1 + y2) / 2 - 6, anchor: 'middle' };
+  }
+  const down = b.y >= a.y + a.h;
+  const x1 = a.x + a.w / 2, x2 = b.x + b.w / 2, y1 = down ? a.y + a.h : a.y, y2 = down ? b.y : b.y + b.h, m = (y1 + y2) / 2;
+  return { d: `M${x1} ${y1} C${x1} ${m} ${x2} ${m} ${x2} ${y2}`, lx: (x1 + x2) / 2 + 7, ly: m + 4, anchor: 'start' };
+}
+
 function serverlessDiagram(k) {
   return archDiagram(SVL, k, {
     focus: SVL.focus[k] || [],
@@ -3597,520 +3610,886 @@ function serverlessDiagram(k) {
 }
 
 /* =====================================================================
-   MASTER MODULE: Automated Security Remediation & Self-Healing Architecture
+   AWS REFERENCE NOTES: nine topic tabs, each with a cloud architecture diagram
    ===================================================================== */
-const SELFHEAL_SVG = {
-  height: 560,
-  groups: [
-    { x: 12, y: 30, w: 318, h: 515, color: '#38bdf8', label: 'Operational zone · workload account' },
-    { x: 352, y: 30, w: 636, h: 515, color: '#f59e0b', label: 'Remediation zone · security tooling account', dash: '8 6' },
-  ],
-  boundary: { x: 341, y1: 22, y2: 552, label: 'REMEDIATION ZONE BOUNDARY' },
-  nodes: {
-    actor:      { x: 28,  y: 72,  w: 130, h: 52, color: '#f43f5e', label: 'IAM principal', sub: 'Unauthorized API call', desc: 'A leaked access key or over-privileged role makes an API call it should not. CloudTrail records who, what, when and from where.' },
-    bucket:     { x: 28,  y: 152, w: 130, h: 52, color: '#84cc16', label: 'S3 bucket', sub: 'Made public', desc: 'Someone attaches a bucket policy with "Principal": "*". AWS Config records the configuration change within minutes.' },
-    ec2:        { x: 28,  y: 232, w: 130, h: 52, color: '#f97316', label: 'EC2 instance', sub: 'Talking to a C2 IP', desc: 'A compromised instance contacts a command-and-control server. GuardDuty sees it in VPC Flow Logs and DNS logs.' },
-    trail:      { x: 182, y: 72,  w: 130, h: 52, color: '#a78bfa', label: 'CloudTrail', sub: 'Records API calls', desc: 'The audit log of every API call. GuardDuty analyses it for anomalies such as credential use from unusual locations.' },
-    config:     { x: 182, y: 152, w: 130, h: 52, color: '#22d3ee', label: 'AWS Config', sub: 'Compliance rules', desc: 'Records resource configuration and evaluates rules. A public bucket turns the rule NON_COMPLIANT and Security Hub control S3.8 FAILED.' },
-    gd:         { x: 182, y: 232, w: 130, h: 52, color: '#ef4444', label: 'GuardDuty', sub: 'ML threat detection', desc: 'Analyses CloudTrail, VPC Flow Logs and DNS logs without agents and raises findings with a severity score.' },
-    quarantine: { x: 28,  y: 340, w: 284, h: 56, color: '#fb7185', label: 'Fix applied in the workload', sub: 'Block Public Access · quarantine SG · key deactivated', desc: 'The only change the remediation zone makes inside the workload account: a narrowly scoped, reversible control-plane action.' },
-    role:       { x: 28,  y: 440, w: 284, h: 56, color: '#f59e0b', label: 'SecurityRemediationRole', sub: 'Cross-account · assumable by remediation only', desc: 'The single door back into the workload. Its trust policy allows only the remediation function, and an SCP stops anyone else from changing it.' },
-    hub:        { x: 372, y: 152, w: 150, h: 56, color: '#e879f9', label: 'Security Hub', sub: 'Aggregated findings', desc: 'Collects findings from every account and Region in a common format (ASFF) and emits them to EventBridge.' },
-    eb:         { x: 552, y: 152, w: 150, h: 56, color: '#ec4899', label: 'EventBridge rule', sub: 'Event pattern match', desc: 'Matches only the findings this pipeline is allowed to handle (e.g. S3.8 FAILED, Workflow NEW) and routes them to SQS.' },
-    sqs:        { x: 552, y: 262, w: 150, h: 52, color: '#facc15', label: 'SQS + DLQ', sub: 'Buffer · failed runs', desc: 'Buffers events, retries failed runs after the visibility timeout, and moves poison messages to a dead-letter queue after 5 attempts.' },
-    lambda:     { x: 732, y: 152, w: 118, h: 56, color: '#f97316', label: 'λ Evaluator', sub: 'Decide & guard', desc: 'Checks the kill switch, claims the finding in DynamoDB (idempotency), decides the action and starts the runbook.' },
-    ddb:        { x: 868, y: 152, w: 110, h: 56, color: '#60a5fa', label: 'DynamoDB', sub: 'Idempotency state', desc: 'One item per finding version: IN_PROGRESS, REMEDIATED, RETRY or FAILED. Conditional writes stop duplicate executions.' },
-    ssm:        { x: 732, y: 262, w: 118, h: 52, color: '#2dd4bf', label: 'SSM runbook', sub: 'Executes the fix', desc: 'An SSM Automation document assumes the cross-account role and performs the steps, with approval gates for production.' },
-    logs:       { x: 372, y: 440, w: 150, h: 52, color: '#e879f9', label: 'CloudWatch', sub: 'Logs · metrics · alarms', desc: 'Structured logs from every run, plus alarms on failures and on DLQ depth.' },
-    sns:        { x: 552, y: 440, w: 150, h: 52, color: '#fb7185', label: 'SNS', sub: 'SecOps on-call', desc: 'Notifies humans of every action taken, and urgently of every failure that needs a person.' },
-    forensic:   { x: 732, y: 440, w: 130, h: 52, color: '#84cc16', label: 'S3 forensics', sub: 'Object Lock (WORM)', desc: 'Immutable evidence: the finding, before/after state and API responses, locked in compliance mode.' },
-    kms:        { x: 878, y: 440, w: 100, h: 52, color: '#f59e0b', label: 'KMS CMK', sub: 'Encrypts evidence', desc: 'A customer managed key whose key policy limits decryption to the incident-response role.' },
-  },
-  edges: [
-    { from: 'actor', to: 'trail', d: 'M158 98 L182 98' },
-    { from: 'bucket', to: 'config', d: 'M158 178 L182 178' },
-    { from: 'ec2', to: 'gd', d: 'M158 258 L182 258' },
-    { from: 'trail', to: 'gd', d: 'M312 92 C328 92 328 252 312 252' },
-    { from: 'config', to: 'hub', d: 'M312 176 L372 176', label: 'FAILED', lx: 318, ly: 168 },
-    { from: 'gd', to: 'hub', d: 'M312 262 C346 262 340 198 372 198', label: 'finding', lx: 352, ly: 236 },
-    { from: 'hub', to: 'eb', d: 'M522 180 L552 180' },
-    { from: 'eb', to: 'sqs', d: 'M627 208 L627 262', label: 'route', lx: 634, ly: 240 },
-    { from: 'sqs', to: 'lambda', d: 'M702 288 C722 288 742 250 752 208', label: 'poll', lx: 712, ly: 262 },
-    { from: 'lambda', to: 'ddb', d: 'M850 180 L868 180' },
-    { from: 'lambda', to: 'ssm', d: 'M791 208 L791 262', label: 'start', lx: 798, ly: 240 },
-    { from: 'ssm', to: 'role', d: 'M732 300 C640 336 470 336 400 382 C352 414 345 468 312 468', label: 'sts:AssumeRole', lx: 432, ly: 352, kind: 'assume' },
-    { from: 'role', to: 'quarantine', d: 'M170 440 L170 396', label: 'applies fix', lx: 178, ly: 424, kind: 'assume' },
-    { from: 'quarantine', to: 'ec2', d: 'M93 340 L93 284', label: 'isolate', lx: 100, ly: 318, kind: 'assume' },
-    { from: 'ssm', to: 'forensic', d: 'M800 314 L800 440', label: 'evidence', lx: 807, ly: 400 },
-    { from: 'kms', to: 'forensic', d: 'M878 466 L862 466' },
-    { from: 'sqs', to: 'sns', d: 'M627 314 L627 440', label: 'DLQ > 0', lx: 634, ly: 400 },
-    { from: 'logs', to: 'sns', d: 'M522 466 L552 466', label: 'ALARM', lx: 521, ly: 433, kind: 'alert' },
-  ],
-  badges: ['lambda', 'ssm'],
-  pulses: ['sns'],
-};
+// AWS Architecture Icon category colours (database uses the classic RDS blue).
+const AWSC = { compute: '#ED7100', db: '#527FFF', storage: '#7AA116', security: '#DD344C', network: '#8C4FFF', mgmt: '#E7157B', ext: '#94A3B8' };
+const AWSC_LEGEND = [['compute', 'Compute · Lambda · containers'], ['db', 'Database · RDS'], ['storage', 'Storage · S3'],
+  ['security', 'Security · IAM'], ['network', 'Networking · API'], ['mgmt', 'Management & integration'], ['ext', 'Clients & tools']];
+const nd = (x, y, w, h, kind, label, sub, desc) => ({ x, y, w, h, color: AWSC[kind], label, sub, desc });
+const grp = (x, y, w, h, kind, label, dash) => ({ x, y, w, h, color: AWSC[kind], label, dash });
+const ed = (from, to, label, extra = {}) => ({ from, to, label, ...extra });
 
-const SELFHEAL = {
-  map: String.raw`
- ================= OPERATIONAL ZONE (workload account) =================
-   [ IAM principal ] --unauthorized API call--+
-   [ S3 bucket ] -----PutBucketPolicy "*"-----+
-   [ EC2 instance ] --traffic to a C2 IP------+
-                                              |
-                                              v
-   SENSORS        [ CloudTrail ]  [ AWS Config ]  [ GuardDuty ]
-                        |
-                        |  findings leave the workload account
- =======================|== REMEDIATION ZONE BOUNDARY ===================
-                        v
- ============= REMEDIATION ZONE (security tooling account) =============
-   (1) AGGREGATE  [ Security Hub ]  findings in ASFF from every account and Region
-                        |
-   (2) ROUTE      [ EventBridge rule ]  FAILED or HIGH severity, Workflow = NEW
-                        |
-                        v
-                  [ SQS queue ] --after 5 failed receives--> [ DLQ ] --> CloudWatch alarm
-                        |
-                        v
-   (3) DECIDE     [ Lambda evaluator ]  idempotency claim (DynamoDB), kill switch,
-                        |               blast-radius limit (SSM Parameter Store)
-                        v
-   (4) ACT        [ SSM Automation runbook ]  approval gate for production resources
-                        |
-                        |  sts:AssumeRole  (the only door back into the workload)
-                        v
-                  [ SecurityRemediationRole ]  (lives in the workload account)
-                        |
-                        +--> Block Public Access | quarantine SG | key deactivated | EBS snapshot
-                        |
-                        v
-   (5) RECORD     [ S3 forensic bucket ]  Object Lock (compliance mode) + SSE-KMS
-       & NOTIFY   [ CloudWatch Logs + metrics ]
-                  [ SNS ] --> SecOps on-call
-                  [ Security Hub finding ] --> Workflow status RESOLVED`,
-  traces: [
-    { title: 'Trace A: an S3 bucket is made public', steps: [
-      ['T+0', 'Detection source', 'A developer attaches a bucket policy with "Principal": "*". CloudTrail records the PutBucketPolicy call, including who made it (userIdentity), from where (sourceIPAddress) and when.'],
-      ['≈ minutes', 'Event triggered', 'AWS Config records the configuration change and re-evaluates its rules. Security Hub control S3.8 ("buckets should block public access") turns FAILED, and the finding is imported into the security account in ASFF format.'],
-      ['seconds', 'Event routing', 'Security Hub emits "Security Hub Findings - Imported" to EventBridge. The rule matches Compliance.Status FAILED, SecurityControlId S3.8 and Workflow NEW, then sends the event to an SQS queue.'],
-      ['seconds', 'Compute evaluation', 'Lambda polls the queue. It checks the kill switch, claims finding-id + UpdatedAt in DynamoDB with a conditional write (so a duplicate delivery is ignored), and confirms the bucket is still public.'],
-      ['seconds', 'Remediation executed', 'Lambda assumes SecurityRemediationRole in the workload account and calls PutPublicAccessBlock with all four settings true, then reads the setting back to verify it.'],
-      ['seconds', 'Forensic logging & notification', 'Before/after state and the CloudTrail event ID are written to the Object Lock forensic bucket. The finding is set to RESOLVED with a note, SNS tells the bucket owner and SecOps, and success metrics are published.'],
-    ] },
-    { title: 'Trace B: unauthorized API calls from a compromised EC2 instance', steps: [
-      ['T+0', 'Detection source', 'Credentials taken from an instance profile are used from an IP outside AWS, or the instance contacts a known command-and-control IP.'],
-      ['≈ 5 min', 'Event triggered', 'GuardDuty raises a High-severity finding such as UnauthorizedAccess:IAMUser/InstanceCredentialExfiltration.OutsideAWS or Backdoor:EC2/C&CActivity.B, and publishes it to Security Hub and EventBridge.'],
-      ['seconds', 'Event routing', 'A rule on severity ≥ 7 starts the isolation workflow. Production resources first require a human approval step (SSM aws:approve or a Step Functions task token).'],
-      ['minutes', 'Compute evaluation', 'The runbook enables termination protection, puts the instance in Standby or detaches it from its Auto Scaling group (so it is not replaced and destroyed), and tags it Quarantine=true.'],
-      ['minutes', 'Remediation executed', 'Volatile data is captured with SSM Run Command first. Then: EBS snapshots, swap every security group for a no-rules quarantine group (plus a NACL deny if live sessions must be cut), and attach a deny-all policy that revokes the role\'s active sessions.'],
-      ['minutes', 'Forensic logging & notification', 'Snapshots are copied with a forensic CMK into the forensic account, and every API response is stored in the evidence bucket. SecOps is paged through SNS with the finding and instance ID. The instance is never terminated before evidence is secured.'],
-    ] },
-  ],
-  boundary: [
-    ['Where the operational zone ends', 'The application zone is every workload account and VPC, including the sensors running inside it (CloudTrail, Config, GuardDuty). It ends when a finding is handed off to the security tooling account, the delegated administrator for GuardDuty, Security Hub and the Config aggregator.'],
-    ['Where the remediation zone begins', 'Everything after that handoff lives in a separate account owned by the security team: aggregation, routing, decision, orchestration, state and evidence. It has its own deployment pipeline and its own administrators.'],
-    ['The single door back in', 'The remediation zone reaches into a workload in exactly one way: by assuming SecurityRemediationRole, a narrowly scoped role whose trust policy names only the remediation principals. An SCP prevents workload administrators from editing or deleting it.'],
-    ['What never crosses', 'Application code never calls, imports or configures remediation logic, and remediation never reads application data. It changes only control-plane settings (access blocks, security groups, keys, snapshots).'],
-  ],
-  accounts: String.raw`
-  AWS Organization
-  |
-  +-- Security OU
-  |     +-- Security tooling account   <== REMEDIATION ZONE
-  |     |     GuardDuty + Security Hub delegated admin, Config aggregator,
-  |     |     EventBridge rules, SQS, Lambda, SSM runbooks, DynamoDB state
-  |     +-- Log archive account        <== EVIDENCE VAULT
-  |           organization CloudTrail, Object Lock forensic bucket, KMS keys
-  |
-  +-- Workloads OU                     <== OPERATIONAL ZONE
-        +-- Prod account   app + sensors + SecurityRemediationRole
-        +-- Dev account    app + sensors + SecurityRemediationRole
-
-  SCP on the Workloads OU: deny changes to SecurityRemediationRole
-                           unless the caller is the security tooling account`,
-  groups: [
-    { id: 'A', title: 'Core Compute & Server Infrastructure', items: [
-      ['Amazon EC2', 'Resizable virtual servers launched from an AMI into a subnet, with security groups and an instance profile (IAM role).',
-        ['Lifecycle: pending → running → stopping → stopped (or hibernated) → shutting-down → terminated. Stopping keeps EBS volumes; terminating deletes volumes whose DeleteOnTermination flag is true.', 'User Data runs once at first boot through cloud-init (as root), which is ideal for bootstrapping agents such as the SSM Agent and CloudWatch agent.', 'AMIs are Regional snapshots of a root volume plus launch metadata. Hardened "golden AMIs" built by a pipeline reduce drift.', 'Auto Scaling lifecycle hooks (e.g. Terminating:Wait) pause an instance so logs or evidence can be collected before it disappears.'],
-        ['Isolate, never terminate first: enable termination protection, move the instance to Standby or detach it from its Auto Scaling group, and tag it Quarantine=true.', 'Replace all security groups with a pre-built quarantine group that has no rules. Changing security groups does not cut established tracked connections, so add a NACL deny if live sessions must be killed.', 'Capture volatile memory with SSM Run Command before stopping, then snapshot every attached EBS volume.'],
-        'A compromised instance is evidence: isolate → capture → snapshot → investigate. Terminating destroys the proof.'],
-      ['AWS Lambda', 'Event-driven, serverless functions; you pay per request and per millisecond of execution.',
-        ['Each function runs in an isolated execution environment (a Firecracker micro-VM). A cold start creates the environment and runs init code; warm invocations reuse it, so put SDK clients outside the handler.', 'Timeout up to 900 seconds (15 minutes); memory 128 MB–10,240 MB, with CPU allocated in proportion to memory.', 'Concurrency: a default Regional quota (1,000, can be raised). Reserved concurrency guarantees and caps a function; provisioned concurrency removes cold starts.', 'The execution role supplies temporary credentials. Asynchronous invocations (e.g. from EventBridge) are retried twice and can go to an on-failure destination or a DLQ.'],
-        ['The ideal remediation evaluator: no servers to patch, scales with the number of findings, and is fully audited in CloudTrail.', 'Set reserved concurrency to cap the blast radius (no more than N remediations in parallel), and keep the timeout well under the SQS visibility timeout.', 'A Lambda function inside a VPC needs VPC endpoints (STS, SSM, Logs, KMS) or a NAT gateway to call AWS APIs.'],
-        'Over 15 minutes, or needs a human approval wait? Use Step Functions or SSM Automation, not one Lambda function.'],
-      ['Amazon ECS & EKS', 'Container orchestration: ECS is AWS-native; EKS is managed Kubernetes.',
-        ['ECS task definitions declare image, CPU and memory, ports, secrets and two roles: the task role (what the app may call) and the task execution role (pull images, write logs).', 'In awsvpc network mode each task gets its own ENI and security groups, so a single task can be isolated.', 'EKS pods use securityContext (runAsNonRoot, readOnlyRootFilesystem, drop capabilities, no privileged mode) and Pod Security Standards. IAM comes from IRSA or EKS Pod Identity.', 'Kubernetes NetworkPolicies (supported by the Amazon VPC CNI) restrict pod-to-pod traffic.'],
-        ['Contain a compromised container: apply a deny-all NetworkPolicy or a quarantine security group to its ENI, then cordon the node so no new pods are scheduled there.', 'Capture logs and images for evidence before stopping the task. The orchestrator will start a clean replacement from the trusted image.', 'GuardDuty EKS Protection and Runtime Monitoring feed container threats into the same pipeline.'],
-        '"Kubernetes" in the question → EKS; otherwise ECS is simpler. Permissions for the app → task role (not the execution role).'],
-      ['AWS Fargate', 'Serverless compute for ECS and EKS: you define tasks or pods and AWS runs them without instances to manage.',
-        ['Each Fargate task or pod has its own isolation boundary: it does not share the kernel, CPU, memory or ENI with any other task.', 'No privileged containers and no host access, which removes a whole class of container-escape attacks.', 'Ephemeral storage is encrypted, and the platform is patched by AWS.'],
-        ['A smaller blast radius: a compromised task cannot reach neighbours through the host.', 'Forensics relies on logs, GuardDuty Runtime Monitoring and image scanning, since there is no host to log in to. Stop the task and the service starts a clean copy.'],
-        '"Containers without managing servers" plus strong isolation → Fargate.'],
-    ] },
-    { id: 'B', title: 'Networking & Edge Delivery', items: [
-      ['Amazon VPC', 'An isolated virtual network in one Region, divided into subnets that each live in one Availability Zone.',
-        ['A route table decides each subnet\'s fate: 0.0.0.0/0 → internet gateway makes it public; 0.0.0.0/0 → NAT gateway gives a private subnet outbound-only IPv4.', 'Gateway endpoints (S3, DynamoDB) are free route-table entries. Interface endpoints (PrivateLink) put ENIs for services such as STS, SSM, KMS, Logs and Secrets Manager inside your subnets.', 'Endpoint policies restrict which principals and resources can be reached through the endpoint.', 'VPC Flow Logs capture accepted and rejected traffic metadata, which is useful evidence.'],
-        ['Run the remediation control plane in private subnets with interface endpoints, so commands to STS, SSM and EC2 never touch the internet.', 'Use an S3 gateway endpoint plus an endpoint policy that allows only the organisation\'s forensic bucket, which blocks data exfiltration paths.'],
-        'Private access to AWS APIs → VPC endpoints. "No internet gateway, no NAT" → interface endpoints (and a gateway endpoint for S3/DynamoDB).'],
-      ['Security Groups & Network ACLs', 'Two firewall layers: security groups on each ENI, and NACLs on each subnet.',
-        ['Security groups are stateful (return traffic is allowed automatically), support allow rules only, and can reference other security groups.', 'NACLs are stateless (allow return traffic on ephemeral ports 1024-65535), support ALLOW and DENY, and are evaluated in rule-number order.', 'Connection tracking: changing security group rules does not interrupt already-tracked connections.'],
-        ['Programmatic quarantine: call ModifyInstanceAttribute (or ModifyNetworkInterfaceAttribute) to replace all of the instance\'s groups with a pre-created quarantine group that has no inbound and no outbound rules.', 'To sever active sessions immediately, add a NACL DENY for the instance IP. For investigation, allow only a forensic workstation\'s security group.', 'Block a malicious CIDR across a subnet with a low-numbered NACL deny rule.'],
-        'Need to DENY a specific IP → NACL (security groups cannot deny).'],
-      ['Amazon Route 53', 'Highly available DNS with health checks and routing policies.',
-        ['Health checks probe endpoints (HTTP/HTTPS/TCP), combine other checks (calculated), or follow a CloudWatch alarm.', 'Failover routing (active-passive) answers with the secondary record when the primary\'s health check fails. Weighted, latency and geolocation policies spread traffic.', 'Private hosted zones resolve internal names only inside associated VPCs. Route 53 Resolver DNS Firewall can block domains.'],
-        ['Self-healing at the DNS layer: when a stack is quarantined, its health check fails and traffic fails over to the healthy Region or stack automatically.', 'Automated mitigation: add malicious domains from GuardDuty findings to a DNS Firewall block list.'],
-        'Active-passive DR → failover routing + health checks. Remember that clients cache answers for the record\'s TTL.'],
-      ['Amazon API Gateway', 'Managed front door for REST, HTTP and WebSocket APIs.',
-        ['Throttling: an account-level default (10,000 requests per second with a 5,000 burst) plus per-stage, per-method and usage-plan limits.', 'Authorization: IAM (SigV4), Cognito user pools, or Lambda authorizers. API keys identify clients but are not authentication.', 'Resource policies restrict callers by IP, VPC or account. REST APIs can be protected by AWS WAF; mutual TLS is available for custom domains.'],
-        ['Securely expose a webhook so an external tool (e.g. a third-party scanner) can trigger remediation: a Lambda authorizer verifies an HMAC signature using a secret from Secrets Manager.', 'Throttle the endpoint so a flood of fake alerts cannot cause a remediation storm, and send accepted requests to SQS rather than acting synchronously.'],
-        'Protect the API with WAF, authenticate with IAM / Cognito / Lambda authorizers, and use throttling and usage plans against abuse.'],
-    ] },
-    { id: 'C', title: 'Storage & Database Layers', items: [
-      ['Amazon S3', 'Object storage with 11 nines of durability; access is controlled by identity policies, bucket policies and Block Public Access.',
-        ['Bucket policies are resource-based JSON policies. ACLs are legacy and disabled by default on new buckets (Object Ownership: bucket owner enforced).', 'Block Public Access (account and bucket level) overrides any policy or ACL that would grant public access. It is on by default for new buckets.', 'Versioning keeps every version. Object Lock (which requires versioning) adds WORM retention: governance mode can be bypassed with a special permission; compliance mode cannot, not even by root. Legal holds have no expiry date.'],
-        ['Remediate public exposure with PutPublicAccessBlock (idempotent), or the managed runbook AWS-DisableS3BucketPublicReadWrite.', 'Forensic vault: a dedicated bucket in the log archive account with Object Lock compliance mode, SSE-KMS, versioning, and a bucket policy denying deletes and requiring TLS.'],
-        'Immutable for everyone, including root → Object Lock compliance mode.'],
-      ['Amazon EBS', 'Block storage volumes attached to an instance in a single Availability Zone.',
-        ['Snapshots are incremental, point-in-time, crash-consistent copies stored redundantly by AWS and usable in any AZ, and in any Region once copied.', 'A snapshot can be taken while the volume is attached and in use. Pause writes or stop the instance for application consistency.', 'Snapshots encrypted with the default aws/ebs key cannot be shared. Copy them with a customer managed key and grant the forensic account access in the key policy.'],
-        ['Forensic sequence: snapshot every volume while still attached → tag with case ID → copy the snapshot with the forensic CMK into the forensic account → create a volume there and attach it read-only to an isolated analysis instance.', 'Detach the original volume only after the snapshot completes, if at all. The detached volume is also evidence.'],
-        'Snapshots are AZ-independent; volumes are AZ-locked. To move a volume to another AZ: snapshot → create volume.'],
-      ['Amazon RDS & DynamoDB', 'RDS manages relational engines; DynamoDB is a serverless key-value and document store.',
-        ['RDS lives in your VPC behind security groups. Automated backups support point-in-time restore (retention up to 35 days); manual snapshots last until deleted. Encryption must be chosen at creation; encrypt an existing database by snapshot → encrypted copy → restore.', 'RDS credentials belong in Secrets Manager with rotation. IAM database authentication removes passwords entirely.', 'DynamoDB access is IAM-based (identity policies plus resource-based table policies). It has PITR (35 days), on-demand backups and deletion protection.'],
-        ['During an incident: take a manual snapshot first, then call ModifyDBInstance to swap in a restricted security group, and rotate the master secret immediately.', 'DynamoDB: attach a deny policy to the compromised role and restore the table to a point before the damage into a new table.'],
-        'Restore to any second within 35 days → PITR (RDS automated backups, DynamoDB PITR).'],
-    ] },
-    { id: 'D', title: 'Security, Identity & Compliance', items: [
-      ['AWS IAM', 'Authentication and authorization for every AWS API call.',
-        ['AssumeRole (STS) returns temporary credentials (access key, secret, session token) valid from 15 minutes up to the role\'s maximum session (1–12 hours; 1 hour when chaining roles).', 'A role has a trust policy (who may assume it; a resource-based policy) and permission policies (what it may do; identity-based).', 'Evaluation: an explicit deny anywhere wins, then an allow, otherwise implicit deny. SCPs and permission boundaries cap permissions but never grant them.', 'Service-linked roles are predefined by a service (e.g. AWSServiceRoleForConfig) and can be changed only by that service.'],
-        ['Cross-account remediation: the workload role trusts only the remediation function\'s role ARN, with aws:PrincipalOrgID (and optionally sts:ExternalId) conditions.', 'Contain a compromised principal: deactivate its access keys (keep them as evidence; don\'t delete), attach AWSDenyAll, and use "Revoke active sessions", which denies tokens issued before now.'],
-        'Workloads use roles with temporary credentials. "Explicit deny wins" settles most policy-evaluation questions.'],
-      ['AWS KMS', 'Managed creation and control of encryption keys, backed by FIPS-validated hardware security modules.',
-        ['Envelope encryption: GenerateDataKey returns a plaintext and an encrypted data key. Data is encrypted locally with the plaintext key, which is then discarded; only the encrypted key is stored. KMS keys never leave KMS unencrypted.', 'The key policy is the primary access control and must allow use; grants give temporary, scoped permissions.', 'Automatic rotation (yearly by default, configurable) creates new key material but keeps the old material to decrypt existing data. Rotation does not re-encrypt data.', 'DisableKey takes effect immediately; ScheduleKeyDeletion waits 7–30 days.'],
-        ['Lock down data during an incident by disabling the key: everything encrypted under it becomes unreadable at once (and re-enabling restores it).', 'Re-encrypt compromised data or snapshots under a new forensic CMK whose key policy admits only incident responders.'],
-        'Audit every key use → customer managed key (CloudTrail logs each call). Remember: rotation doesn\'t protect data that was already exfiltrated.'],
-      ['AWS Secrets Manager', 'Encrypted storage of credentials and API keys, with automatic rotation.',
-        ['Secrets are encrypted with a KMS key and versioned with staging labels: AWSCURRENT, AWSPENDING and AWSPREVIOUS.', 'Rotation runs a Lambda function through four steps: createSecret, setSecret, testSecret, finishSecret. Managed rotation exists for RDS, Aurora, Redshift and DocumentDB. Schedules can be as frequent as every 4 hours.', 'Resource policies and cross-Region replication are supported. Applications read the secret at runtime, with caching.'],
-        ['On compromise, call RotateSecret immediately; applications pick up AWSCURRENT on their next fetch with no redeploy.', 'Store webhook URLs and HMAC keys here. Updating a webhook means a new secret version, and the notifier reads the fresh value on its next cache refresh.'],
-        'Automatic rotation of database credentials → Secrets Manager (Parameter Store has no native rotation).'],
-      ['AWS WAF', 'Layer 7 web firewall for CloudFront, ALB, API Gateway (REST), AppSync and Cognito user pools.',
-        ['A web ACL contains rules evaluated in priority order, with Allow, Block, Count, CAPTCHA or Challenge actions.', 'Managed rule groups cover OWASP-style attacks (SQL injection, XSS, known bad inputs, IP reputation).', 'Rate-based rules block clients exceeding a request rate over a sliding window. IP sets hold up to 10,000 addresses or CIDRs.'],
-        ['Automated mitigation: a function adds attacker IPs from GuardDuty findings or WAF logs to a block IP set (UpdateIPSet with its lock token), and removes them after a TTL.', 'Start new rules in Count mode, check the logs, then switch to Block.'],
-        'SQL injection, XSS or rate limiting at layer 7 → WAF. Volumetric DDoS → Shield (Advanced for 24/7 response and cost protection).'],
-    ] },
-    { id: 'E', title: 'Monitoring, Governance & Automated Orchestration', items: [
-      ['Amazon EventBridge', 'Serverless event router (the evolution of CloudWatch Events).',
-        ['Buses: the default bus (AWS service events), custom buses (your apps) and partner buses (SaaS). Resource policies on a bus allow cross-account delivery.', 'Rules match JSON event patterns (exact, prefix, anything-but, numeric, exists) and send to up to 5 targets, optionally reshaped with input transformers.', 'Delivery to targets is retried for up to 24 hours (185 attempts) with exponential back-off; failed events go to a target DLQ. Archive and replay let you re-run past events.'],
-        ['The routing brain: one rule per remediation type, matching only findings it may handle (control ID, severity, Workflow NEW).', 'Exclude the remediation role\'s own API calls from patterns, so a fix cannot trigger itself in a loop.'],
-        'Asynchronous, content-based routing of AWS or SaaS events → EventBridge.'],
-      ['Amazon CloudWatch & AWS CloudTrail', 'CloudWatch watches performance and logs; CloudTrail records every API call.',
-        ['CloudWatch Logs: log groups with retention; metric filters turn log patterns into metrics; alarms (OK / ALARM / INSUFFICIENT_DATA) trigger SNS, Auto Scaling, EC2 or SSM actions.', 'CloudTrail: management events are recorded by default (90-day event history). Data events (S3 objects, Lambda invokes) are opt-in. Trails deliver to S3; an organization trail covers every account.', 'Log file integrity validation (SHA-256 digest files) proves logs were not altered. CloudTrail Lake supports SQL queries.'],
-        ['CloudTrail answers "who did what, when, from where": userIdentity, eventName, sourceIPAddress, errorCode. These are the facts behind every remediation decision.', 'Metric filter on AccessDenied or root-user activity → alarm → SNS. Alarm on remediation failures and DLQ depth.'],
-        'Performance and logs → CloudWatch. "Who deleted the bucket?" → CloudTrail.'],
-      ['AWS Config', 'Continuously records resource configurations and evaluates them against rules.',
-        ['The configuration recorder captures configuration items and a timeline for each resource. Aggregators combine accounts and Regions.', 'Rules are AWS managed or custom (Lambda or Guard), triggered on configuration change or periodically. Conformance packs bundle rules.', 'Remediation actions attach SSM Automation documents to a rule, run manually or automatically, with retry settings (maximum automatic attempts and the interval between them).'],
-        ['Out-of-the-box self-healing: s3-bucket-public-read-prohibited → AWS-DisableS3BucketPublicReadWrite; vpc-default-security-group-closed → AWSConfigRemediation-RemoveVPCDefaultSecurityGroupRules.', 'The configuration timeline proves exactly what changed and when, which is forensic context for the incident.'],
-        '"Continuously check compliance and auto-fix drift" → Config rules + remediation actions.'],
-      ['AWS Systems Manager (SSM)', 'Operations hub for managed nodes and automated runbooks.',
-        ['The SSM Agent connects outbound over HTTPS to the ssm, ssmmessages and ec2messages endpoints. No inbound ports, SSH keys or bastions are needed; the instance needs AmazonSSMManagedInstanceCore.', 'Session Manager provides logged interactive shells. Run Command executes documents (e.g. AWS-RunShellScript) across many nodes with rate control.', 'Automation runbooks chain steps (aws:executeAwsApi, aws:runCommand, aws:branch, aws:approve) under an assume role. State Manager associations continuously enforce a desired state.'],
-        ['The hands of the remediation zone: an Automation runbook performs isolation step by step, with a built-in approval step for production.', 'Collect memory and logs from a quarantined instance through Run Command, even after all network rules are removed, provided the instance can still reach the SSM endpoints (e.g. through VPC endpoints).'],
-        'Manage instances with no open SSH ports → Session Manager. Automated, repeatable runbooks → SSM Automation.'],
-      ['AWS Security Hub & Amazon GuardDuty', 'GuardDuty detects threats; Security Hub aggregates and scores findings across the organisation.',
-        ['GuardDuty analyses CloudTrail management events, VPC Flow Logs and DNS logs independently (you need not enable them) using threat intelligence and machine learning. Optional protection plans cover S3, EKS, runtime, malware, RDS and Lambda.', 'New GuardDuty findings reach EventBridge within about 5 minutes; updates follow the export frequency (15 minutes, 1 hour or 6 hours).', 'Security Hub normalises findings into ASFF, runs security standards (AWS Foundational Security Best Practices, CIS), aggregates Regions, and runs automation rules. Custom actions send chosen findings to EventBridge.'],
-        ['Run both with a delegated administrator in the security tooling account, so every member account\'s findings arrive centrally.', 'After acting, call BatchUpdateFindings to set Workflow to NOTIFIED or RESOLVED with a note, so humans can see what automation did.'],
-        'Intelligent threat detection → GuardDuty. A single pane of glass for findings and compliance → Security Hub.'],
-    ] },
-    { id: 'F', title: 'Messaging & Asynchronous Decoupling', items: [
-      ['Amazon SNS & Amazon SQS', 'SNS pushes each message to many subscribers; SQS holds messages until a consumer processes them.',
-        ['SNS topics fan out to SQS, Lambda, HTTPS, email and SMS. Filter policies route by attributes, and a subscription can have its own DLQ for undeliverable messages.', 'SQS standard queues are at-least-once with best-effort ordering; FIFO queues are exactly-once and ordered per message group. Retention is 1 minute to 14 days.', 'Visibility timeout (default 30 seconds, maximum 12 hours) hides a received message while it is processed. With Lambda as the consumer, set it to at least 6× the function timeout.', 'The redrive policy (maxReceiveCount) moves repeatedly failing messages to a DLQ; DLQ redrive returns them to the source queue after a fix.'],
-        ['SQS between EventBridge and the evaluator absorbs bursts (e.g. 500 findings after a bad deployment) and gives free retries.', 'Alarm when the DLQ\'s ApproximateNumberOfMessagesVisible is above 0: every message there is a remediation that needs a human. SNS delivers both success notices and failure pages.'],
-        'Decouple and retry → SQS (+ DLQ). Notify many subscribers at once → SNS. Fan-out → SNS → multiple SQS queues.'],
-    ] },
-  ],
-  isolation: [
-    ['Dedicated security tooling account', 'Remediation code, state and credentials live in an account in the Security OU, separate from every workload. It is the delegated administrator for GuardDuty, Security Hub and Config aggregation.'],
-    ['Cross-account roles, deployed centrally', 'CloudFormation StackSets (service-managed) put an identical SecurityRemediationRole into every workload account. Its trust policy names only the remediation principals, with an aws:PrincipalOrgID condition.'],
-    ['Guard the guardrails', 'An SCP on the Workloads OU denies iam:* changes to SecurityRemediationRole (and stops CloudTrail, GuardDuty and Config from being disabled) unless the caller is the security account.'],
-    ['Separate pipelines and owners', 'Remediation code ships through its own CI/CD pipeline with its own reviewers. Application deploys can never modify it, and it never depends on application code or data.'],
-    ['Least privilege per action', 'One function and role per remediation type, scoped to the exact API calls needed (e.g. only s3:PutBucketPublicAccessBlock), not a broad admin role.'],
-    ['Tiered automation', 'Auto-fix low-risk, reversible issues (public buckets, default security groups). Require human approval for high-impact actions on production (isolating a production instance), using SSM aws:approve or a Step Functions task token.'],
-  ],
-  state: [
-    ['Idempotency key', 'Use finding ID + UpdatedAt (or the SQS message ID) as the key. Claim it with a DynamoDB conditional write (attribute_not_exists), so a redelivered event or a parallel retry does nothing.'],
-    ['Explicit state machine', 'RECEIVED → IN_PROGRESS → REMEDIATED | FAILED | RETRY | SUPPRESSED, stored with a TTL. On a transient failure set RETRY, which releases the claim so the next attempt can proceed.'],
-    ['Idempotent actions', 'Read the current state first and act only if needed. Prefer declarative APIs that are naturally idempotent (PutPublicAccessBlock), and pass ClientToken where EC2 APIs support it.'],
-    ['Classify every error', 'Transient errors (Throttling, 5xx, timeouts) are retried. Permanent errors (AccessDenied, resource not found, validation) are marked FAILED, sent to humans, and never retried.'],
-    ['Back-off with jitter', 'Retry at every layer: SDK (adaptive mode), SQS visibility timeout + maxReceiveCount, EventBridge target retries, and Step Functions Retry with BackoffRate and full jitter. Delay = random(0, min(cap, base × 2^attempt)).'],
-    ['Circuit breakers', 'A kill switch (an SSM parameter checked at the start of every run), a blast-radius limit (e.g. no more than 20 remediations per hour, enforced with reserved concurrency and a counter), and loop guards (ignore events caused by the remediation role itself).'],
-    ['Close the loop', 'Write evidence to the Object Lock bucket, update the Security Hub finding\'s Workflow status, emit RemediationSucceeded/Failed metrics, and alarm on failures and DLQ depth.'],
-  ],
-  failure: String.raw`
- event --> [ SQS ] --> [ Lambda ] --success--> record REMEDIATED, message deleted
-                          |
-                          +-- transient error (throttling, 5xx, timeout)
-                          |     set RETRY, raise --> message reappears after the
-                          |     visibility timeout --> retried with back-off + jitter
-                          |     --> after maxReceiveCount (5) --> [ DLQ ] --> alarm --> SNS
-                          |
-                          +-- permanent error (AccessDenied, resource gone)
-                                record FAILED, notify humans, do NOT retry`,
-  code: [
-    ['EventBridge event pattern (security tooling account)', 'json', `{
-  "source": ["aws.securityhub"],
-  "detail-type": ["Security Hub Findings - Imported"],
-  "detail": {
-    "findings": {
-      "Compliance": {
-        "Status": ["FAILED"],
-        "SecurityControlId": ["S3.2", "S3.3", "S3.8"]
+const NOTES = [
+  {
+    id: 'vpc', icon: '🌐', kind: 'network', title: 'VPC & Networking Tiers',
+    tagline: 'A three-tier VPC across two Availability Zones: public entry, private application tier, isolated data tier.',
+    stats: [['5', 'IPs reserved in every subnet'], ['/16 – /28', 'Allowed VPC & subnet sizes'], ['Stateful', 'Security groups'], ['Stateless', 'Network ACLs']],
+    hint: 'Each band is a subnet tier. A subnet is public only because its route table sends 0.0.0.0/0 to the Internet Gateway.',
+    diagram: {
+      height: 600,
+      groups: [
+        grp(150, 20, 835, 565, 'ext', 'AWS Region', '8 6'),
+        grp(170, 45, 795, 455, 'network', 'VPC 10.0.0.0/16'),
+        grp(190, 70, 755, 120, 'network', 'Public subnets · 0.0.0.0/0 → IGW'),
+        grp(190, 210, 755, 120, 'compute', 'Private app subnets · 0.0.0.0/0 → NAT'),
+        grp(190, 350, 755, 120, 'db', 'Private data subnets · local routes only'),
+      ],
+      nodes: {
+        users: nd(15, 95, 120, 56, 'ext', 'Users', 'Internet', 'Browsers and API clients reaching the application over HTTPS.'),
+        r53: nd(15, 205, 120, 56, 'network', 'Route 53', 'Alias → ALB', 'DNS. An alias record points the domain (even the zone apex) at the load balancer, free of query charges.'),
+        onprem: nd(15, 440, 120, 56, 'ext', 'On-premises', 'VPN / DX', 'The corporate data centre, connected by Site-to-Site VPN (IPsec over the internet) or Direct Connect (private, consistent latency).'),
+        igw: nd(205, 100, 125, 56, 'network', 'Internet GW', 'One per VPC', 'Horizontally scaled, highly available gateway. One per VPC. Performs 1:1 NAT for instances with public IPs.'),
+        alb: nd(360, 100, 185, 56, 'network', 'Application LB', 'Public subnets a + b', 'Layer 7 load balancer spanning both AZs. Its security group allows 443 from the internet; app instances only accept traffic from this SG.'),
+        nata: nd(575, 100, 165, 56, 'network', 'NAT gateway · a', 'Elastic IP · AZ a', 'Lets private instances in AZ a start outbound connections (patches, APIs) while blocking inbound ones. Managed and AZ-scoped.'),
+        natb: nd(765, 100, 165, 56, 'network', 'NAT gateway · b', 'Elastic IP · AZ b', 'One NAT gateway per AZ, so losing an AZ never cuts the other AZ off from the internet.'),
+        appa: nd(360, 240, 185, 56, 'compute', 'EC2 app · AZ a', '10.0.11.0/24', 'Application servers in a private subnet: no public IPs, reachable only through the ALB.'),
+        appb: nd(575, 240, 165, 56, 'compute', 'EC2 app · AZ b', '10.0.12.0/24', 'The same Auto Scaling group in the second AZ, so the tier survives an AZ failure.'),
+        vpce: nd(765, 240, 165, 56, 'network', 'S3 gateway endpoint', 'Free · route-table entry', 'Sends S3 traffic over the AWS network instead of the NAT gateway: private and with no NAT data-processing charges.'),
+        rdsp: nd(360, 380, 185, 56, 'db', 'RDS primary · a', '10.0.21.0/24', 'Database in an isolated subnet. Its security group allows 5432 only from the app tier security group.'),
+        rdss: nd(575, 380, 165, 56, 'db', 'RDS standby · b', '10.0.22.0/24', 'Multi-AZ synchronous standby. Takes over automatically if AZ a fails.'),
+        tgw: nd(190, 515, 190, 52, 'network', 'Transit Gateway', 'Hub for VPCs + VPN', 'Regional hub-and-spoke router: connects many VPCs and on-premises networks with transitive routing.'),
+        flow: nd(400, 515, 190, 52, 'mgmt', 'VPC Flow Logs', 'CloudWatch Logs / S3', 'Records accepted and rejected IP traffic metadata (not packet contents) for troubleshooting and security analysis.'),
+        s3: nd(765, 515, 165, 52, 'storage', 'Amazon S3', 'Regional service', 'S3 lives outside the VPC; the gateway endpoint gives private subnets a private path to it.'),
       },
-      "RecordState": ["ACTIVE"],
-      "Workflow": { "Status": ["NEW"] }
-    }
-  }
-}`],
-    ['Lambda evaluator (Python 3.12): idempotent, retry-aware S3 remediation', 'python', `"""Block public access on S3 buckets reported by Security Hub.
-Runs in the security tooling account; triggered by SQS (ReportBatchItemFailures on)."""
-import hashlib
-import json
+      edges: [
+        ed('users', 'igw', 'HTTPS'),
+        ed('r53', 'alb', 'DNS alias', { d: 'M135 233 C250 233 290 190 360 150', lx: 160, ly: 256 }),
+        ed('igw', 'alb'),
+        ed('alb', 'appa'),
+        ed('alb', 'appb', '', { d: 'M500 156 C500 200 640 200 657 240' }),
+        ed('appb', 'natb', 'egress', { d: 'M700 240 C700 200 830 200 847 156', lx: 760, ly: 206 }),
+        ed('appa', 'rdsp', 'SQL :5432'),
+        ed('rdsp', 'rdss', 'sync'),
+        ed('appb', 'vpce'),
+        ed('vpce', 's3', 'private'),
+        ed('onprem', 'tgw', 'IPsec / DX'),
+        ed('tgw', 'appa', 'VPC attachment', { d: 'M285 515 C285 430 300 290 360 280', lx: 198, ly: 445 }),
+      ],
+    },
+    concepts: [
+      ['Public vs private subnets', 'A public subnet has a route 0.0.0.0/0 → Internet Gateway. Private subnets send 0.0.0.0/0 to a NAT gateway that sits in a public subnet. Data subnets often have no default route at all.'],
+      ['NAT gateway', 'Managed, AZ-scoped, scales automatically. Deploy one per AZ and point each private route table at the NAT in its own AZ. For IPv6 outbound-only traffic use an egress-only internet gateway.'],
+      ['Security groups vs network ACLs', 'Security groups attach to ENIs, support allow rules only, are stateful and can reference other security groups. NACLs apply to subnets, support allow and deny, are evaluated in rule-number order and are stateless, so return traffic on ephemeral ports (1024-65535) must be allowed.'],
+      ['VPC endpoints', 'Gateway endpoints (S3 and DynamoDB only) are free route-table targets. Interface endpoints (AWS PrivateLink) place ENIs with private IPs in your subnets for most other services and are billed per hour and per GB.'],
+      ['Connecting VPCs', 'VPC peering is one-to-one and non-transitive, and CIDRs must not overlap. Transit Gateway is a transitive hub for hundreds of VPCs, VPN and Direct Connect. PrivateLink exposes one service to many consumer VPCs without full network access.'],
+      ['Hybrid connectivity', 'Site-to-Site VPN is quick to set up and encrypted over the internet. Direct Connect is a dedicated private link with consistent latency; it is not encrypted by default, so add MACsec or a VPN over it when encryption is required.'],
+      ['Route 53', 'Alias records map the zone apex to AWS resources. Routing policies: simple, weighted, latency, failover (with health checks), geolocation, geoproximity, multivalue answer and IP-based.'],
+      ['Flow Logs', 'Capture IP traffic metadata at VPC, subnet or ENI level and publish it to CloudWatch Logs, S3 or Firehose. They show ACCEPT and REJECT decisions, which is how you prove an SG or NACL is blocking traffic.'],
+    ],
+    traps: [
+      'Private instances cannot download patches: add a NAT gateway in a public subnet. Never route a private subnet straight to the Internet Gateway.',
+      'Block one malicious IP address: use a NACL deny rule. Security groups cannot deny.',
+      'VPC A peers with B and B with C, but A cannot reach C: peering is not transitive. Use Transit Gateway.',
+      'High NAT gateway charges for S3 traffic: add an S3 gateway endpoint.',
+      'A single NAT gateway is a single point of failure for its AZ. Use one per AZ.',
+    ],
+    code: [['Subnet plan for this diagram', 'text', `VPC 10.0.0.0/16 (65,536 addresses; 5 reserved in every subnet)
+
+Tier      AZ a            AZ b            Route table
+Public    10.0.1.0/24     10.0.2.0/24     0.0.0.0/0 -> igw-...
+App       10.0.11.0/24    10.0.12.0/24    0.0.0.0/0 -> nat-a / nat-b (same AZ)
+Data      10.0.21.0/24    10.0.22.0/24    local only (+ S3 gateway endpoint)
+
+Security groups (stateful, reference by group id)
+  sg-alb : inbound 443 from 0.0.0.0/0
+  sg-app : inbound 8080 from sg-alb
+  sg-db  : inbound 5432 from sg-app`]],
+  },
+
+  {
+    id: 'ec2', icon: '🖥️', kind: 'compute', title: 'EC2 & Linux Patching / SysAdmin',
+    tagline: 'Golden AMIs, Systems Manager patching and keyless shell access for an Auto Scaling fleet.',
+    stats: [['Up to 90%', 'Spot discount vs On-Demand'], ['Up to 72%', 'Savings Plans / Reserved'], ['0 ports', 'Opened for Session Manager'], ['IMDSv2', 'Token-based instance metadata']],
+    hint: 'Orange is the compute fleet, pink is Systems Manager. Patching runs through the SSM Agent; nobody logs in over SSH.',
+    diagram: {
+      height: 560,
+      groups: [
+        grp(15, 30, 250, 330, 'compute', 'Build · golden AMI'),
+        grp(290, 30, 330, 330, 'mgmt', 'AWS Systems Manager'),
+        grp(645, 30, 340, 330, 'compute', 'Auto Scaling group · private subnets'),
+        grp(15, 390, 970, 150, 'mgmt', 'Observe & audit'),
+      ],
+      nodes: {
+        imgb: nd(35, 70, 210, 56, 'compute', 'EC2 Image Builder', 'Bake · test · distribute', 'A pipeline that starts from the latest base image, applies patches and hardening, runs tests and publishes a new AMI on a schedule.'),
+        ami: nd(35, 170, 210, 56, 'compute', 'Golden AMI', 'Patched · hardened · agents', 'The approved image: OS patches, CIS hardening, SSM Agent and CloudWatch agent baked in, so new instances boot compliant.'),
+        lt: nd(35, 270, 210, 56, 'compute', 'Launch template', 'AMI ID · IMDSv2 · user data', 'Versioned launch settings: AMI, instance type, instance profile, security groups, IMDSv2 required and user data.'),
+        baseline: nd(310, 70, 290, 56, 'mgmt', 'Patch baseline', 'Auto-approve after 7 days · Critical', 'Rules that decide which patches are approved: product, classification, severity and an auto-approval delay.'),
+        mw: nd(310, 170, 290, 56, 'mgmt', 'Maintenance window', 'Sun 02:00 · 10% at a time', 'Schedules the patch run with rate control (max concurrency) and an error threshold that stops a bad rollout.'),
+        patch: nd(310, 270, 140, 56, 'mgmt', 'Patch Manager', 'RunPatchBaseline', 'Runs the AWS-RunPatchBaseline document to scan or install patches and reports compliance.'),
+        session: nd(465, 270, 135, 56, 'mgmt', 'Session Manager', 'Shell · no port 22', 'Browser or CLI shell through the SSM Agent: no inbound ports, bastion hosts or SSH keys; every session is logged.'),
+        ec2a: nd(665, 70, 145, 70, 'compute', 'EC2 · AZ a', 'Patch Group: prod', 'Instances are targeted by the "Patch Group" tag, so prod and dev can follow different baselines.'),
+        ec2b: nd(825, 70, 145, 70, 'compute', 'EC2 · AZ b', 'Patch Group: prod', 'The fleet spans two AZs; rate control patches a slice at a time so capacity stays up.'),
+        agent: nd(665, 170, 305, 56, 'compute', 'SSM Agent + CloudWatch agent', 'Role: AmazonSSMManagedInstanceCore', 'The instance profile lets the agent register with Systems Manager. The CloudWatch agent publishes memory and disk metrics, which EC2 does not report by default.'),
+        refresh: nd(665, 270, 305, 56, 'compute', 'Instance refresh', 'New AMI · min healthy 90%', 'Immutable patching: replace instances with the new launch template version while keeping 90% healthy capacity.'),
+        compliance: nd(35, 440, 220, 56, 'mgmt', 'Patch compliance', 'Compliant · non-compliant', 'Per-instance compliance data in Systems Manager, also usable from AWS Config and Security Hub.'),
+        s3logs: nd(290, 440, 200, 56, 'storage', 'S3 bucket', 'Command output logs', 'Full Run Command and Session Manager output, kept for audit.'),
+        cw: nd(525, 440, 185, 56, 'mgmt', 'CloudWatch', 'mem · disk · alarms', 'Metrics, logs and alarms for the fleet, including the agent-only memory and disk metrics.'),
+        sns: nd(760, 440, 200, 56, 'mgmt', 'SNS', 'Patch failure alerts', 'Notifies the on-call team when patching fails or an alarm fires.'),
+      },
+      edges: [
+        ed('imgb', 'ami'), ed('ami', 'lt'),
+        ed('lt', 'refresh', 'new version', { d: 'M140 326 C140 378 817 378 817 326', lx: 480, ly: 381, anchor: 'middle' }),
+        ed('baseline', 'mw'), ed('mw', 'patch'),
+        ed('mw', 'agent', 'Run Command', { lx: 632, ly: 160 }),
+        ed('session', 'agent'),
+        ed('agent', 'ec2a'), ed('agent', 'ec2b'),
+        ed('patch', 'compliance', 'report'), ed('patch', 's3logs', 'output'),
+        ed('cw', 'sns', 'ALARM', { kind: 'alert' }),
+      ],
+      pulses: ['sns'],
+    },
+    concepts: [
+      ['Purchasing options', 'On-Demand for short or unpredictable work; Savings Plans or Reserved Instances (1 or 3 years) for steady load; Spot for fault-tolerant jobs (2-minute interruption notice); Dedicated Hosts for per-socket or per-core licences; Capacity Reservations to guarantee capacity in an AZ.'],
+      ['Instance families', 'General purpose (M, T burstable), compute optimized (C), memory optimized (R, X), storage optimized (I, D) and accelerated (P, G, Inf, Trn). A "g" in the name (m7g) means Graviton, with better price-performance.'],
+      ['Placement groups', 'Cluster: one AZ, lowest latency, for HPC. Spread: each instance on distinct hardware, max 7 per AZ per group. Partition: groups of racks for HDFS, Cassandra and Kafka.'],
+      ['Block and file storage', 'EBS volumes live in one AZ (gp3 gives a 3,000 IOPS baseline; io2 Block Express goes up to 256,000 IOPS). Instance store is fast but lost on stop. EFS is shared NFS across AZs.'],
+      ['Patch Manager', 'A patch baseline approves patches; the "Patch Group" tag maps instances to a baseline; a maintenance window runs AWS-RunPatchBaseline with max concurrency and max errors; results appear as patch compliance.'],
+      ['Session Manager & Run Command', 'Shell access and fleet-wide commands through the SSM Agent and IAM, with no inbound ports, bastion hosts or SSH keys. Output goes to S3 and CloudWatch Logs for audit.'],
+      ['Immutable patching', 'Bake patched golden AMIs with EC2 Image Builder, publish a new launch template version, then roll the Auto Scaling group with instance refresh. Replacing beats patching in place.'],
+      ['Health & recovery', 'System status checks find AWS hardware problems (fix with stop/start or auto recovery); instance status checks find OS problems (reboot or fix the OS). Memory and disk metrics need the CloudWatch agent.'],
+    ],
+    traps: [
+      'Memory or disk utilization missing in CloudWatch: install the CloudWatch agent. They are not default EC2 metrics.',
+      'Remove bastion hosts and audit every command: Session Manager.',
+      'Patch hundreds of instances on a schedule with no logins: Patch Manager with a maintenance window, not cron jobs.',
+      'Instance store data does not survive stop or terminate. Hibernation saves RAM to the encrypted EBS root volume.',
+      'Use IMDSv2 (session tokens) to block SSRF attacks that steal instance credentials.',
+    ],
+    code: [
+      ['Linux sysadmin quick reference (Amazon Linux 2023)', 'bash', `# Patch in place and reboot only when needed (AL2023 uses dnf)
+sudo dnf check-update
+sudo dnf upgrade -y
+sudo dnf needs-restarting -r || sudo systemctl reboot
+
+# Services, disks and logs
+systemctl status amazon-ssm-agent
+df -h && lsblk
+journalctl -u amazon-ssm-agent --since "1 hour ago"
+
+# IMDSv2: request a session token, then read metadata
+TOKEN=$(curl -sX PUT http://169.254.169.254/latest/api/token \\
+  -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+curl -sH "X-aws-ec2-metadata-token: $TOKEN" \\
+  http://169.254.169.254/latest/meta-data/instance-id`],
+      ['Patch the prod fleet with Systems Manager (AWS CLI)', 'bash', `aws ssm send-command \\
+  --document-name "AWS-RunPatchBaseline" \\
+  --targets "Key=tag:Patch Group,Values=prod" \\
+  --parameters "Operation=Install,RebootOption=RebootIfNeeded" \\
+  --max-concurrency "10%" --max-errors "5%" \\
+  --output-s3-bucket-name "patch-logs-111122223333"`],
+    ],
+  },
+
+  {
+    id: 'lambda', icon: '⚡', kind: 'compute', title: 'Lambda & Serverless Compute',
+    tagline: 'Event sources, the Lambda execution model, and where results and failures go.',
+    stats: [['15 min', 'Maximum timeout'], ['10,240 MB', 'Maximum memory (CPU scales with it)'], ['1,000', 'Default concurrency per Region'], ['10 GB', 'Max /tmp and container image']],
+    hint: 'Left: how events arrive (sync, async, polled). Middle: what you configure. Right: where results and failures go.',
+    diagram: {
+      height: 560,
+      groups: [
+        grp(15, 30, 230, 500, 'ext', 'Event sources'),
+        grp(275, 30, 420, 500, 'compute', 'AWS Lambda service'),
+        grp(725, 30, 260, 500, 'ext', 'Targets & destinations'),
+      ],
+      nodes: {
+        apigw: nd(35, 70, 190, 56, 'network', 'API Gateway', 'Synchronous request', 'Synchronous: the caller waits for the response and handles errors itself.'),
+        s3ev: nd(35, 160, 190, 56, 'storage', 'S3 event', 'Asynchronous · 2 retries', 'Asynchronous: Lambda queues the event and retries twice on error before sending it to the on-failure destination.'),
+        eb: nd(35, 250, 190, 56, 'mgmt', 'EventBridge', 'Rules · Scheduler (cron)', 'Asynchronous invocations from event rules and EventBridge Scheduler for cron-style jobs.'),
+        sqs: nd(35, 340, 190, 56, 'mgmt', 'SQS queue', 'Event source mapping', 'Lambda polls the queue and invokes with batches; failed messages return to the queue and later to its DLQ.'),
+        kds: nd(35, 430, 190, 56, 'network', 'Kinesis / DDB Streams', 'Ordered shard batches', 'Polled per shard in order. A failing batch blocks its shard until it succeeds, expires or is bisected.'),
+        role: nd(300, 65, 175, 56, 'security', 'Execution role', 'Least-privilege IAM', 'What the function may do (e.g. dynamodb:PutItem on one table). Who may invoke it is a separate resource-based policy.'),
+        layers: nd(495, 65, 175, 56, 'compute', 'Layers', 'Shared libraries · ≤ 5', 'Zip archives of shared code or dependencies; up to 5 per function.'),
+        fn: nd(300, 150, 370, 80, 'compute', 'λ Function', '128–10,240 MB · timeout ≤ 15 min · /tmp ≤ 10 GB', 'Your handler. Memory also sets CPU (up to 6 vCPUs). Initialize SDK clients outside the handler so warm invocations reuse them.'),
+        conc: nd(300, 265, 175, 56, 'compute', 'Concurrency', 'Reserved · provisioned', 'Reserved concurrency guarantees and caps a function. Provisioned concurrency keeps environments warm to remove cold starts.'),
+        snap: nd(495, 265, 175, 56, 'compute', 'SnapStart', 'Java · Python · .NET', 'Restores a snapshot of an initialized environment to cut cold-start time.'),
+        vpc: nd(300, 360, 370, 56, 'network', 'VPC access (optional)', 'Hyperplane ENI → private subnets · RDS Proxy', 'Attach to your VPC to reach private resources. Internet access then needs a NAT gateway; use RDS Proxy to pool database connections.'),
+        logs: nd(300, 455, 370, 56, 'mgmt', 'CloudWatch Logs + X-Ray', 'Logs · metrics · traces', 'Every invocation logs to CloudWatch; X-Ray traces calls across services.'),
+        ddb: nd(745, 70, 220, 56, 'db', 'DynamoDB', 'Reads · writes', 'The usual serverless data store: no connections to manage, scales with Lambda.'),
+        s3o: nd(745, 160, 220, 56, 'storage', 'Amazon S3', 'Generated objects', 'Reports, thumbnails and exports written by the function.'),
+        sfn: nd(745, 250, 220, 56, 'mgmt', 'Step Functions', 'Long or multi-step workflows', 'Orchestrates many functions with retries, branches, waits and human approval. Standard workflows run up to one year.'),
+        dest: nd(745, 340, 220, 56, 'mgmt', 'On-success destination', 'SNS · SQS · EventBridge · λ', 'For asynchronous invocations, the result record is sent here when the function succeeds.'),
+        dlq: nd(745, 430, 220, 56, 'mgmt', 'On-failure / DLQ', 'After async retries fail', 'Failed asynchronous events land here for inspection and replay, instead of being lost.'),
+      },
+      edges: [
+        ed('apigw', 'fn', 'sync'), ed('s3ev', 'fn', 'async'), ed('eb', 'fn', 'event'), ed('sqs', 'fn', 'poll'), ed('kds', 'fn', 'batches'),
+        ed('role', 'fn', 'assumes', { kind: 'assume', lx: 318, ly: 142, anchor: 'start' }), ed('layers', 'fn'),
+        ed('fn', 'vpc', '', { d: 'M485 230 L485 360' }),
+        ed('fn', 'logs', '', { d: 'M300 215 C282 300 282 450 300 483' }),
+        ed('fn', 'ddb'), ed('fn', 's3o'), ed('fn', 'sfn'),
+        ed('fn', 'dest', 'success'), ed('fn', 'dlq', 'failure', { kind: 'alert' }),
+      ],
+      badges: ['fn'],
+      pulses: ['dlq'],
+    },
+    concepts: [
+      ['Three invocation models', 'Synchronous (API Gateway, ALB, SDK): the caller gets the result and handles retries. Asynchronous (S3, SNS, EventBridge): Lambda queues the event and retries twice, then uses the on-failure destination or DLQ. Event source mapping (SQS, Kinesis, DynamoDB Streams, MSK): Lambda polls and invokes with batches.'],
+      ['Concurrency', 'Concurrency ≈ requests per second × average duration. Reserved concurrency guarantees capacity for a function and also caps it. Provisioned concurrency pre-initializes environments for steady, latency-sensitive traffic.'],
+      ['Cold starts', 'A new environment downloads code and runs init code. Reduce it with smaller packages, init outside the handler, provisioned concurrency or SnapStart.'],
+      ['Packaging', 'Zip packages: 50 MB zipped for direct upload, 250 MB unzipped including layers. Container images up to 10 GB from ECR. Up to 5 layers per function.'],
+      ['Networking', 'By default functions can reach the internet and public AWS endpoints. In a VPC they use Hyperplane ENIs, so internet access needs a NAT gateway and AWS service access works best through VPC endpoints.'],
+      ['Permissions', 'The execution role says what the function can call. The resource-based policy says who can invoke it (for example S3 or another account). Keep secrets in Secrets Manager or Parameter Store, not in plain environment variables.'],
+      ['Orchestration', 'Step Functions coordinates multi-step and long-running workflows (Standard up to one year, Express for high-volume short runs). EventBridge Scheduler replaces cron servers.'],
+    ],
+    traps: [
+      'A job that runs longer than 15 minutes is not a Lambda job. Use Step Functions, ECS on Fargate or AWS Batch.',
+      'Lambda in a VPC cannot reach the internet: add a NAT gateway (Lambda ENIs never get public IPs).',
+      'Database "too many connections" errors from Lambda: put RDS Proxy in front of the database.',
+      'One busy function throttles all the others: give it reserved concurrency.',
+      'SQS with Lambda: set the visibility timeout to at least 6 × the function timeout and turn on ReportBatchItemFailures.',
+    ],
+    code: [['Python handler behind API Gateway (proxy integration)', 'python', `import json
 import os
-import time
 
 import boto3
-from botocore.config import Config
-from botocore.exceptions import ClientError
 
-AWS_RETRY = Config(retries={"max_attempts": 8, "mode": "adaptive"})  # SDK back-off + jitter
-TABLE = boto3.resource("dynamodb").Table(os.environ["STATE_TABLE"])
-STS = boto3.client("sts", config=AWS_RETRY)
-SSM = boto3.client("ssm", config=AWS_RETRY)
-SNS = boto3.client("sns", config=AWS_RETRY)
-S3_LOCAL = boto3.client("s3", config=AWS_RETRY)
-SECURITYHUB = boto3.client("securityhub", config=AWS_RETRY)
-
-ROLE_NAME = os.environ.get("REMEDIATION_ROLE", "SecurityRemediationRole")
-TOPIC_ARN = os.environ["ALERT_TOPIC_ARN"]
-EVIDENCE_BUCKET = os.environ["EVIDENCE_BUCKET"]          # Object Lock bucket
-BLOCK_ALL = {"BlockPublicAcls": True, "IgnorePublicAcls": True,
-             "BlockPublicPolicy": True, "RestrictPublicBuckets": True}
-PERMANENT = {"AccessDenied", "AccessDeniedException", "NoSuchBucket", "InvalidRequest"}
+# Created once per execution environment and reused by warm invocations
+table = boto3.resource("dynamodb").Table(os.environ["TABLE_NAME"])
 
 
 def handler(event, context):
-    """Report partial batch failures so only the failed messages are retried."""
-    failures = []
-    for record in event["Records"]:
-        try:
-            for finding in json.loads(record["body"])["detail"]["findings"]:
-                remediate(finding)
-        except Exception as exc:  # transient: SQS makes it visible again later
-            print(json.dumps({"level": "ERROR", "messageId": record["messageId"], "error": repr(exc)}))
-            failures.append({"itemIdentifier": record["messageId"]})
-    return {"batchItemFailures": failures}
+    body = json.loads(event.get("body") or "{}")
+    if "id" not in body:
+        return {"statusCode": 400, "body": json.dumps({"error": "id is required"})}
 
+    table.put_item(Item={"pk": str(body["id"]), "payload": json.dumps(body)})
+    return {"statusCode": 201, "body": json.dumps({"saved": body["id"]})}`]],
+  },
 
-def remediate(finding):
-    if SSM.get_parameter(Name="/remediation/enabled")["Parameter"]["Value"] != "true":
-        print("Kill switch off: finding stays NEW for manual triage")
-        return
-    key = f'{finding["Id"]}#{finding["UpdatedAt"]}'
-    if not claim(key):
-        return  # duplicate delivery: this finding version is already handled
+  {
+    id: 'rds', icon: '🗄️', kind: 'db', title: 'RDS & Database Clustering',
+    tagline: 'Aurora clusters, Multi-AZ, read replicas and cross-Region Global Database: availability versus read scaling.',
+    stats: [['35 days', 'Max automated backup retention'], ['15', 'Aurora replicas per cluster'], ['6 copies', 'Aurora storage across 3 AZs'], ['< 1 s', 'Typical Global Database lag']],
+    hint: 'Writer endpoint for writes, reader endpoint for reads. Multi-AZ is for availability; read replicas are for scaling reads.',
+    diagram: {
+      height: 600,
+      groups: [
+        grp(15, 40, 175, 290, 'compute', 'Application tier'),
+        grp(210, 40, 775, 290, 'db', 'Aurora cluster · primary Region'),
+        grp(15, 355, 480, 225, 'db', 'RDS Multi-AZ + read replica'),
+        grp(515, 355, 470, 225, 'db', 'Aurora Global Database · secondary Region', '8 6'),
+      ],
+      nodes: {
+        app: nd(30, 80, 145, 56, 'compute', 'App servers', 'ECS · EC2 · Lambda', 'Connect through the proxy, using the writer endpoint for writes and the reader endpoint for reads.'),
+        proxy: nd(30, 170, 145, 56, 'db', 'RDS Proxy', 'Connection pooling', 'Pools and shares connections, absorbs Lambda connection storms and cuts failover time by up to 66%.'),
+        secrets: nd(30, 260, 145, 56, 'security', 'Secrets Manager', 'Rotated DB creds', 'Stores and automatically rotates the database credentials that RDS Proxy uses.'),
+        wep: nd(230, 90, 170, 52, 'db', 'Writer endpoint', 'Reads + writes', 'Always points at the current writer, and follows it after a failover.'),
+        rep: nd(230, 180, 170, 52, 'db', 'Reader endpoint', 'Load-balanced reads', 'Spreads connections across the Aurora Replicas.'),
+        writer: nd(450, 90, 170, 52, 'db', 'Writer · AZ a', 'Primary instance', 'The single instance that accepts writes in a provisioned Aurora cluster.'),
+        r1: nd(450, 180, 170, 52, 'db', 'Replica · AZ b', 'Failover tier 0', 'Serves reads; the highest-priority replica is promoted if the writer fails (about 30 seconds).'),
+        r2: nd(660, 180, 170, 52, 'db', 'Replica · AZ c', 'Auto Scaling reads', 'Aurora Auto Scaling adds or removes replicas based on CPU or connections.'),
+        vol: nd(852, 80, 118, 152, 'db', 'Storage', '6 copies · 3 AZs', 'One shared cluster volume: six copies across three AZs, write quorum 4 of 6, read quorum 3 of 6, grows automatically up to 128 TiB.'),
+        primary: nd(35, 395, 200, 56, 'db', 'RDS primary · AZ a', 'Synchronous standby', 'A Multi-AZ DB instance replicates synchronously to a standby in another AZ.'),
+        standby: nd(270, 395, 205, 56, 'db', 'Standby · AZ b', 'No reads · failover 60–120 s', 'Not readable. On failure the DNS name flips to it automatically, typically within 60-120 seconds.'),
+        replica: nd(35, 495, 200, 56, 'db', 'Read replica', 'Async · can be cross-Region', 'Asynchronous, readable copy for reporting or read scaling. Can be promoted manually, for example for DR.'),
+        backup: nd(270, 495, 205, 56, 'storage', 'Automated backups', 'PITR · retention ≤ 35 days', 'Daily snapshots plus transaction logs in S3 allow point-in-time restore. A restore always creates a new DB instance.'),
+        sec: nd(535, 395, 205, 56, 'db', 'Secondary cluster', 'Read-only · local reads', 'Serves low-latency reads in the second Region and is ready to be promoted.'),
+        secvol: nd(760, 395, 205, 56, 'db', 'Replicated storage', 'Typical lag < 1 second', 'Storage-level replication from the primary Region, with no load on the writer.'),
+        promote: nd(535, 495, 430, 56, 'db', 'Managed failover / switchover', 'Promote the secondary · RPO ≈ 1 s · RTO < 1 min', 'Cross-Region disaster recovery: promote the secondary Region to take writes in about a minute.'),
+      },
+      edges: [
+        ed('app', 'proxy'), ed('secrets', 'proxy', 'creds'),
+        ed('proxy', 'wep'), ed('proxy', 'rep'),
+        ed('wep', 'writer', 'writes'), ed('rep', 'r1', 'reads'),
+        ed('rep', 'r2', '', { d: 'M315 232 C315 272 745 272 745 232' }),
+        ed('writer', 'vol', '4 of 6 write quorum'), ed('r2', 'vol'),
+        ed('vol', 'secvol', 'replication'), ed('secvol', 'sec'), ed('sec', 'promote'),
+        ed('primary', 'standby', 'sync'), ed('primary', 'replica', 'async'), ed('standby', 'backup', 'snapshots'),
+      ],
+    },
+    concepts: [
+      ['Multi-AZ DB instance', 'A synchronous standby in a second AZ with automatic failover (typically 60-120 seconds) behind the same DNS name. The standby serves no reads. It is for availability, not performance.'],
+      ['Multi-AZ DB cluster', 'For MySQL and PostgreSQL: one writer and two readable standbys in three AZs, with faster failover (typically under 35 seconds) and a reader endpoint.'],
+      ['Read replicas', 'Asynchronous, readable copies: up to 15 for MySQL, MariaDB and PostgreSQL. They can be cross-Region and can be promoted to standalone databases. They scale reads; they do not give automatic failover.'],
+      ['Aurora architecture', 'MySQL- or PostgreSQL-compatible. Compute is separated from a shared cluster volume (6 copies across 3 AZs, auto-growing to 128 TiB). Up to 15 low-lag replicas, writer and reader endpoints, custom endpoints and failover tiers.'],
+      ['Aurora Serverless v2 & Global Database', 'Serverless v2 scales capacity in fine-grained ACUs for spiky or unpredictable load. Global Database replicates storage to other Regions with typical lag under 1 second and promotion in about a minute.'],
+      ['Backups', 'Automated backups keep 1-35 days and allow point-in-time restore. Manual snapshots are kept until you delete them and can be copied across Regions and accounts. Every restore creates a new instance with a new endpoint.'],
+      ['Encryption', 'Choose KMS encryption at creation. To encrypt an existing unencrypted database: take a snapshot, copy it with encryption, restore from the copy. Replicas of an encrypted database are encrypted too.'],
+      ['RDS Proxy', 'Pools connections, enforces IAM authentication with credentials from Secrets Manager, and keeps application connections open during failover.'],
+    ],
+    traps: [
+      '"Improve availability" means Multi-AZ. "Offload read or reporting traffic" means read replicas.',
+      'Encrypting an existing unencrypted RDS database: snapshot, copy with encryption, restore.',
+      'Cross-Region disaster recovery with RPO around 1 second and RTO around 1 minute: Aurora Global Database.',
+      'Unpredictable or intermittent database load: Aurora Serverless v2.',
+      'Needing OS or database-host access: RDS Custom (Oracle, SQL Server) or a database on EC2.',
+    ],
+    code: [['Replicas and failover drills (AWS CLI)', 'bash', `# Add a cross-Region read replica for DR / local reads
+aws rds create-db-instance-read-replica \\
+  --region eu-central-1 \\
+  --db-instance-identifier app-db-replica-fra \\
+  --source-db-instance-identifier arn:aws:rds:eu-west-1:111122223333:db:app-db \\
+  --db-instance-class db.r7g.large
 
-    account = finding["AwsAccountId"]
-    bucket = finding["Resources"][0]["Id"].split(":::")[-1]
-    try:
-        before, after = fix_bucket(account, bucket)
-    except ClientError as exc:
-        code = exc.response["Error"]["Code"]
-        if code in PERMANENT:  # retrying cannot help: hand over to humans
-            set_status(key, "FAILED", code)
-            notify(f"Auto-remediation FAILED for s3://{bucket} in {account}: {code}")
-            return
-        set_status(key, "RETRY", code)  # release the claim, then let SQS retry
-        raise
-    except Exception as exc:
-        set_status(key, "RETRY", type(exc).__name__)
-        raise
+# Test Aurora failover to a chosen replica
+aws rds failover-db-cluster \\
+  --db-cluster-identifier app-aurora \\
+  --target-db-instance-identifier app-aurora-replica-b`]],
+  },
 
-    evidence = {"finding": finding["Id"], "account": account, "bucket": bucket,
-                "before": before, "after": after, "at": int(time.time())}
-    S3_LOCAL.put_object(Bucket=EVIDENCE_BUCKET,
-                        Key=f"s3-public/{account}/{bucket}/{hashlib.sha256(key.encode()).hexdigest()}.json",
-                        Body=json.dumps(evidence).encode(), ServerSideEncryption="aws:kms",
-                        ChecksumAlgorithm="SHA256")  # Object Lock buckets require a checksum
-    SECURITYHUB.batch_update_findings(
-        FindingIdentifiers=[{"Id": finding["Id"], "ProductArn": finding["ProductArn"]}],
-        Workflow={"Status": "RESOLVED"},
-        Note={"Text": "Auto-remediated: S3 Block Public Access enabled", "UpdatedBy": "auto-remediation"})
-    set_status(key, "REMEDIATED", json.dumps(after))
-    notify(f"Blocked public access on s3://{bucket} in account {account}.")
-
-
-def fix_bucket(account, bucket):
-    s3 = client_in("s3", account)
-    before = current_block(s3, bucket)
-    if not all(before.get(k) for k in BLOCK_ALL):  # idempotent: act only when needed
-        s3.put_public_access_block(Bucket=bucket, PublicAccessBlockConfiguration=BLOCK_ALL)
-    return before, current_block(s3, bucket)
-
-
-def current_block(s3, bucket):
-    try:
-        return s3.get_public_access_block(Bucket=bucket)["PublicAccessBlockConfiguration"]
-    except ClientError as exc:
-        if exc.response["Error"]["Code"] == "NoSuchPublicAccessBlockConfiguration":
-            return {k: False for k in BLOCK_ALL}
-        raise
-
-
-def client_in(service, account):
-    creds = STS.assume_role(RoleArn=f"arn:aws:iam::{account}:role/{ROLE_NAME}",
-                            RoleSessionName="auto-remediation", DurationSeconds=900)["Credentials"]
-    return boto3.client(service, config=AWS_RETRY,
-                        aws_access_key_id=creds["AccessKeyId"],
-                        aws_secret_access_key=creds["SecretAccessKey"],
-                        aws_session_token=creds["SessionToken"])
-
-
-def claim(key):
-    try:
-        TABLE.put_item(
-            Item={"pk": key, "status": "IN_PROGRESS", "expires": int(time.time()) + 30 * 86400},
-            ConditionExpression="attribute_not_exists(pk) OR #s = :retry",
-            ExpressionAttributeNames={"#s": "status"},
-            ExpressionAttributeValues={":retry": "RETRY"})
-        return True
-    except ClientError as exc:
-        if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
-            return False
-        raise
-
-
-def set_status(key, status, detail=""):
-    TABLE.update_item(Key={"pk": key}, UpdateExpression="SET #s = :s, detail = :d",
-                      ExpressionAttributeNames={"#s": "status"},
-                      ExpressionAttributeValues={":s": status, ":d": detail})
-
-
-def notify(message):
-    SNS.publish(TopicArn=TOPIC_ARN, Subject="Auto-remediation", Message=message)`],
-    ['Workload account: SecurityRemediationRole trust policy', 'json', `{
+  {
+    id: 'apigw', icon: '🔑', kind: 'network', title: 'API Gateway & Cognito Identity',
+    tagline: 'Front-door APIs with throttling and authorizers, plus user sign-in (user pools) and AWS credentials for app users (identity pools).',
+    stats: [['10,000 rps', 'Default account throttle'], ['5,000', 'Default burst'], ['29 s', 'Default integration timeout'], ['1 hour', 'Default ID / access token lifetime']],
+    hint: 'Crimson is identity: the user pool signs users in; the identity pool turns their token into temporary AWS credentials.',
+    diagram: {
+      height: 560,
+      groups: [
+        grp(15, 40, 160, 480, 'ext', 'Clients'),
+        grp(200, 40, 300, 255, 'security', 'Amazon Cognito'),
+        grp(200, 315, 300, 205, 'network', 'Amazon API Gateway'),
+        grp(525, 40, 460, 480, 'ext', 'Backend · your AWS account'),
+      ],
+      nodes: {
+        web: nd(30, 90, 130, 56, 'ext', 'Web app', 'SPA in browser', 'Signs in with Cognito, then sends the JWT in the Authorization header of every API call.'),
+        mobile: nd(30, 200, 130, 56, 'ext', 'Mobile app', 'iOS · Android', 'Uses the identity pool to get temporary AWS credentials and upload straight to S3.'),
+        partner: nd(30, 400, 130, 56, 'ext', 'Partner system', 'API key + plan', 'A B2B client metered by an API key and a usage plan. The key identifies; it does not authenticate.'),
+        up: nd(220, 80, 260, 56, 'security', 'User pool', 'Sign-up · sign-in · MFA · JWTs', 'A user directory with managed sign-in, MFA and password policies. Issues ID, access and refresh tokens.'),
+        idp: nd(220, 150, 260, 56, 'security', 'Federated IdPs', 'Google · Apple · SAML · OIDC', 'Social and enterprise identity providers federated into the user pool.'),
+        ip: nd(220, 225, 260, 56, 'security', 'Identity pool', 'Token → temporary AWS creds', 'Exchanges a user pool, social or SAML token (or guest access) for STS credentials mapped to IAM roles.'),
+        api: nd(220, 355, 260, 64, 'network', 'REST API · prod stage', 'Authorizer · throttling · cache', 'Validates the token with a Cognito authorizer, applies stage and method throttling, and caches responses.'),
+        waf: nd(220, 440, 120, 56, 'security', 'AWS WAF', 'Web ACL', 'Blocks SQL injection, XSS, bad bots and IP floods before they reach the API.'),
+        plan: nd(360, 440, 120, 56, 'network', 'Usage plan', 'Quotas · API keys', 'Per-client throttling and daily or monthly quotas tied to API keys.'),
+        authz: nd(545, 90, 200, 56, 'compute', 'λ Authorizer', 'Custom tokens · cached', 'For non-Cognito tokens or header-based rules. Returns an IAM policy that API Gateway caches.'),
+        sts: nd(545, 225, 200, 56, 'security', 'AWS STS', 'Temporary credentials', 'Issues short-lived keys through AssumeRoleWithWebIdentity.'),
+        s3: nd(785, 225, 180, 56, 'storage', 'Amazon S3', 'Per-user prefix', 'An IAM policy variable limits each user to their own prefix.'),
+        lam: nd(545, 355, 200, 64, 'compute', 'λ Handler', 'Business logic', 'Lambda proxy integration receives the whole request, including the verified token claims.'),
+        ddb: nd(785, 355, 180, 64, 'db', 'DynamoDB', 'Per-user items', 'Data partitioned by the user sub (subject) from the token.'),
+        cw: nd(545, 450, 200, 56, 'mgmt', 'CloudWatch', 'Access logs · 4XX / 5XX', 'Access logs, latency, 4XX and 5XX metrics and alarms for the API.'),
+      },
+      edges: [
+        ed('web', 'up', 'sign in'), ed('idp', 'up'),
+        ed('mobile', 'ip'), ed('ip', 'sts', 'temp creds', { lx: 512, ly: 238, anchor: 'middle' }), ed('sts', 's3'),
+        ed('web', 'api', 'JWT', { d: 'M160 132 C192 132 190 380 220 383', lx: 196, ly: 318 }),
+        ed('partner', 'api', 'x-api-key'),
+        ed('api', 'lam', 'invoke'), ed('api', 'authz'), ed('lam', 'ddb'), ed('api', 'cw', 'logs'),
+        ed('waf', 'api'), ed('plan', 'api'),
+      ],
+    },
+    concepts: [
+      ['API types', 'REST API: the full feature set (usage plans, API keys, request validation, caching, WAF, private endpoints). HTTP API: cheaper and faster, with JWT authorizers but fewer features. WebSocket API: two-way, real-time messaging.'],
+      ['Endpoint types', 'Edge-optimized (via CloudFront for global clients), Regional (for clients in the same Region or your own CDN) and Private (reachable only through an execute-api interface VPC endpoint).'],
+      ['Authorization', 'Cognito user pool authorizer (JWT), Lambda authorizer (any token or header logic, cached), IAM authorization (SigV4 for AWS principals), plus resource policies to restrict source IPs, VPCs or accounts.'],
+      ['Throttling & quotas', 'Account-wide default of 10,000 requests per second with a 5,000 burst (soft limits), with stage and method throttles below that. Usage plans and API keys set per-client quotas; excess calls get HTTP 429.'],
+      ['Caching & integrations', 'REST stage cache with a 300-second default TTL (maximum 3,600 s). Integrations: Lambda proxy, HTTP, direct AWS service calls (for example SQS SendMessage) and VPC links to private ALBs or NLBs.'],
+      ['Cognito user pools', 'Authentication: sign-up, sign-in, MFA, managed login pages, social and SAML/OIDC federation. Issues ID, access and refresh tokens (JWTs).'],
+      ['Cognito identity pools', 'Authorization to AWS: exchanges a token (or guest access) for temporary STS credentials for authenticated or unauthenticated IAM roles. Policy variables such as cognito-identity.amazonaws.com:sub give per-user S3 and DynamoDB access.'],
+    ],
+    traps: [
+      'Sign users in to a web or mobile app: user pools. Let app users access S3 or DynamoDB directly: identity pools.',
+      'API keys and usage plans meter and throttle clients; they are not authentication.',
+      '504 errors on long requests (29-second default): make the work asynchronous with SQS or Step Functions, or raise the quota on a Regional REST API.',
+      'Protect an API from SQL injection and bots: attach AWS WAF to a REST API stage. HTTP APIs do not support WAF directly.',
+      'An API reachable only from inside your VPC: a private REST API, an interface VPC endpoint and a resource policy.',
+    ],
+    code: [['Identity pool role: each user can only touch their own S3 prefix', 'json', `{
   "Version": "2012-10-17",
   "Statement": [{
-    "Sid": "OnlyTheRemediationFunction",
     "Effect": "Allow",
-    "Principal": { "AWS": "arn:aws:iam::111122223333:role/s3-public-remediation-lambda" },
+    "Action": ["s3:GetObject", "s3:PutObject"],
+    "Resource": "arn:aws:s3:::app-user-files/\${cognito-identity.amazonaws.com:sub}/*"
+  }]
+}`]],
+  },
+
+  {
+    id: 's3', icon: '🪣', kind: 'storage', title: 'S3 & Asset Storage Architecture',
+    tagline: 'Private buckets behind CloudFront, presigned uploads, event processing, lifecycle tiering and cross-Region protection.',
+    stats: [['5 TB', 'Maximum object size'], ['11 nines', 'Designed durability'], ['3,500 / 5,500', 'PUT / GET per second per prefix'], ['SSE-S3', 'Default encryption for new objects']],
+    hint: 'Green is storage. The bucket stays private: viewers read through CloudFront (OAC) and uploaders write with presigned URLs.',
+    diagram: {
+      height: 560,
+      groups: [
+        grp(15, 40, 160, 480, 'ext', 'Clients'),
+        grp(200, 40, 200, 225, 'network', 'Edge'),
+        grp(200, 290, 200, 230, 'compute', 'Upload path'),
+        grp(425, 40, 330, 480, 'storage', 'Primary bucket · Region A'),
+        grp(780, 40, 205, 480, 'storage', 'DR · Region B', '8 6'),
+      ],
+      nodes: {
+        browser: nd(30, 95, 130, 56, 'ext', 'Browsers', 'Global viewers', 'Download assets from the nearest CloudFront edge location.'),
+        uploader: nd(30, 330, 130, 56, 'ext', 'Uploader app', 'Sends files', 'Asks the backend for a presigned URL, then uploads directly to S3 without AWS credentials.'),
+        cf: nd(220, 85, 160, 64, 'network', 'CloudFront', 'OAC · cache · HTTPS', 'The CDN. Origin Access Control signs requests to S3, so the bucket never needs to be public.'),
+        waf: nd(220, 180, 160, 56, 'security', 'WAF + Shield', 'Edge protection', 'Web ACL rules and DDoS protection at the edge.'),
+        sign: nd(220, 330, 160, 56, 'compute', 'λ Sign URL', 'Presigned PUT · 15 min', 'Checks the user, then returns a short-lived presigned URL scoped to one object key.'),
+        mpu: nd(220, 430, 160, 56, 'storage', 'Multipart upload', 'Parts · > 100 MB', 'Parallel, retryable parts. Recommended above 100 MB and required above 5 GB.'),
+        bucket: nd(445, 85, 290, 64, 'storage', 'assets-bucket', 'Versioning · SSE-KMS · Block Public Access', 'Private bucket: Block Public Access on, ACLs disabled, versioning enabled, SSE-KMS with an S3 Bucket Key.'),
+        event: nd(445, 190, 140, 56, 'storage', 'S3 event', 'ObjectCreated', 'Event notifications to Lambda, SQS, SNS or EventBridge when objects change.'),
+        thumb: nd(600, 190, 135, 56, 'compute', 'λ Thumbnail', 'Resize images', 'Processes new uploads, for example generating thumbnails into a different prefix.'),
+        lifecycle: nd(445, 290, 290, 64, 'storage', 'Lifecycle rules', 'Standard → IA (30 d) → Glacier IR (90 d)', 'Transition and expiration rules by prefix or tag; also expire old versions and abort incomplete multipart uploads.'),
+        deep: nd(445, 400, 290, 64, 'storage', 'Glacier Deep Archive', 'After 180 d · restore in 12–48 h', 'The cheapest class for archives you rarely read.'),
+        replica: nd(800, 85, 170, 64, 'storage', 'Replica bucket', 'CRR · RTC 15 min', 'Cross-Region Replication of new objects; Replication Time Control adds a 15-minute SLA.'),
+        lock: nd(800, 190, 170, 56, 'storage', 'Object Lock', 'WORM · compliance', 'Write-once-read-many retention. In compliance mode nobody, not even root, can delete before the date.'),
+        kms: nd(800, 290, 170, 56, 'security', 'KMS key', 'Multi-Region key', 'A multi-Region key lets replicated objects be decrypted in the DR Region.'),
+      },
+      edges: [
+        ed('browser', 'cf', 'GET'), ed('waf', 'cf'), ed('cf', 'bucket', 'OAC'),
+        ed('uploader', 'sign', 'ask'), ed('uploader', 'mpu', 'PUT'),
+        ed('mpu', 'bucket', '', { d: 'M380 458 C412 458 412 140 445 140' }),
+        ed('bucket', 'event'), ed('event', 'thumb'),
+        ed('bucket', 'lifecycle', '', { d: 'M735 135 C752 170 752 300 735 322' }),
+        ed('lifecycle', 'deep', '180 d'),
+        ed('bucket', 'replica', 'CRR'),
+      ],
+    },
+    concepts: [
+      ['Storage classes', 'Standard; Intelligent-Tiering (automatic, no retrieval fees); Standard-IA and One Zone-IA (30-day minimum); Glacier Instant Retrieval (milliseconds, 90-day minimum); Glacier Flexible Retrieval (minutes to hours); Glacier Deep Archive (12-48 hours, 180-day minimum).'],
+      ['Lifecycle rules', 'Transition or expire objects by prefix or tag, expire noncurrent versions, and abort incomplete multipart uploads to stop paying for orphaned parts.'],
+      ['Access control', 'Block Public Access is on by default; ACLs are disabled by default (Bucket owner enforced). Use IAM policies and bucket policies, and S3 Access Points for many teams sharing one bucket.'],
+      ['Encryption', 'SSE-S3 is the default. SSE-KMS adds key control and CloudTrail audit (use S3 Bucket Keys to cut KMS calls). DSSE-KMS adds two layers; SSE-C uses your own keys; client-side encryption encrypts before upload.'],
+      ['Serving assets', 'CloudFront with Origin Access Control keeps the bucket private; signed URLs or cookies protect paid content. S3 static website endpoints are HTTP only, so put CloudFront in front for HTTPS.'],
+      ['Uploads', 'Presigned URLs grant time-limited GET or PUT without sharing credentials. Multipart upload is recommended above 100 MB and required above 5 GB. Transfer Acceleration speeds long-distance uploads through edge locations.'],
+      ['Data protection', 'Versioning, MFA Delete, Object Lock (governance or compliance mode, legal holds) and replication (CRR / SRR, which needs versioning on both buckets). Existing objects need S3 Batch Replication.'],
+      ['Performance', 'At least 3,500 writes and 5,500 reads per second per prefix, so spread keys across prefixes. Use byte-range fetches for parallel downloads and S3 Express One Zone for single-digit-millisecond access.'],
+    ],
+    traps: [
+      'Keep the bucket private but serve users worldwide quickly: CloudFront with Origin Access Control.',
+      'Unknown or changing access patterns: S3 Intelligent-Tiering.',
+      'Records that nobody, including root, can delete for 7 years: Object Lock in compliance mode.',
+      'Replication only copies new objects; use S3 Batch Replication for existing ones.',
+      'One Zone-IA is only for data you can re-create; it is lost if that AZ is destroyed.',
+    ],
+    code: [
+      ['Bucket policy: only this CloudFront distribution (OAC) can read', 'json', `{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Sid": "AllowCloudFrontOAC",
+    "Effect": "Allow",
+    "Principal": { "Service": "cloudfront.amazonaws.com" },
+    "Action": "s3:GetObject",
+    "Resource": "arn:aws:s3:::assets-bucket/*",
+    "Condition": {
+      "StringEquals": { "AWS:SourceArn": "arn:aws:cloudfront::111122223333:distribution/EDFDVBD6EXAMPLE" }
+    }
+  }]
+}`],
+      ['Day-to-day S3 commands', 'bash', `aws s3 sync ./dist s3://assets-bucket/site/ --delete     # deploy static files
+aws s3 presign s3://assets-bucket/reports/q3.pdf --expires-in 3600   # 1-hour GET link
+aws s3api put-bucket-versioning --bucket assets-bucket \\
+  --versioning-configuration Status=Enabled`],
+    ],
+  },
+
+  {
+    id: 'security', icon: '🛡️', kind: 'security', title: 'Security Services & IAM Scopes',
+    tagline: 'Who can do what: organization guardrails, account roles, the policy evaluation order, and the detection services around them.',
+    stats: [['Deny', 'An explicit deny always wins'], ['0', 'Permissions an SCP grants'], ['1 year', 'Default KMS key rotation period'], ['90 days', 'CloudTrail event history']],
+    hint: 'Left: where permissions are scoped (organization → OU → account → role). Right: the order AWS evaluates one request.',
+    diagram: {
+      height: 600,
+      groups: [
+        grp(15, 40, 560, 330, 'security', 'AWS Organizations'),
+        grp(600, 40, 385, 330, 'security', 'Policy evaluation · one request'),
+        grp(15, 395, 970, 190, 'security', 'Detect · protect · audit'),
+      ],
+      nodes: {
+        mgmt: nd(35, 80, 240, 56, 'security', 'Management account', 'Billing · no workloads', 'Owns the organization. SCPs never restrict it, so keep workloads out of it.'),
+        scp: nd(300, 80, 255, 56, 'security', 'SCPs + RCPs', 'Guardrails · grant nothing', 'Service control policies cap what principals in member accounts can do; resource control policies cap what can be done to their resources.'),
+        ousec: nd(35, 175, 240, 56, 'security', 'Security OU', 'Log archive · audit accounts', 'Central CloudTrail logs, Security Hub and GuardDuty administration live here.'),
+        ouprod: nd(300, 175, 255, 56, 'security', 'Workloads OU', 'Deny other Regions · deny root', 'Typical SCPs: allow only approved Regions, block leaving the organization, deny root-user actions.'),
+        idc: nd(35, 275, 240, 64, 'security', 'IAM Identity Center', 'SSO · permission sets', 'Workforce single sign-on: permission sets become IAM roles in each account.'),
+        acct: nd(300, 275, 255, 64, 'security', 'Prod account', 'IAM roles · resource policies', 'People and workloads use roles with temporary credentials; resources carry their own resource-based policies.'),
+        e1: nd(620, 72, 345, 44, 'security', '1 · Any explicit Deny?', 'Yes → DENY. Deny always wins', 'An explicit deny in any applicable policy ends the evaluation.'),
+        e2: nd(620, 130, 345, 44, 'security', '2 · Do the SCPs and RCPs allow it?', 'No → implicit DENY', 'Organization guardrails must allow the action.'),
+        e3: nd(620, 188, 345, 44, 'security', '3 · Resource-based policy?', 'Same account: its Allow can grant', 'For example a bucket policy or KMS key policy that names the principal.'),
+        e4: nd(620, 246, 345, 44, 'security', '4 · Identity-based policy?', 'No Allow → implicit DENY', 'The user or role policy must allow the action.'),
+        e5: nd(620, 304, 345, 44, 'security', '5 · Boundary and session policy?', 'Both must allow → ALLOW', 'Permissions boundaries and session policies can only reduce what is allowed.'),
+        gd: nd(35, 430, 175, 56, 'security', 'GuardDuty', 'Threat detection', 'Finds threats in CloudTrail, VPC Flow Logs and DNS logs, with optional S3, EKS, RDS and malware protection.'),
+        insp: nd(225, 430, 175, 56, 'security', 'Inspector', 'CVE scanning', 'Continuously scans EC2, ECR images and Lambda for software vulnerabilities.'),
+        macie: nd(415, 430, 170, 56, 'security', 'Macie', 'PII in S3', 'Finds sensitive data such as PII in S3 using machine learning.'),
+        hub: nd(600, 430, 175, 56, 'security', 'Security Hub', 'Findings · CSPM', 'Aggregates findings across accounts and checks security standards.'),
+        detective: nd(790, 430, 175, 56, 'security', 'Detective', 'Investigation graphs', 'Builds behaviour graphs to investigate the root cause of a finding.'),
+        kms: nd(35, 510, 175, 56, 'security', 'KMS', 'Envelope encryption', 'Customer managed keys, key policies, grants, multi-Region keys and automatic rotation.'),
+        sm: nd(225, 510, 175, 56, 'security', 'Secrets Manager', 'Auto rotation', 'Stores secrets and rotates them on a schedule (built in for RDS, Redshift and DocumentDB).'),
+        waf: nd(415, 510, 170, 56, 'security', 'WAF · Shield', 'L7 rules · DDoS', 'WAF filters HTTP requests; Shield Standard is free, Shield Advanced adds DDoS response and cost protection.'),
+        trail: nd(600, 510, 175, 56, 'mgmt', 'CloudTrail', 'Every API call', 'Who did what, when and from where. Use an organization trail to S3 with log file validation.'),
+        config: nd(790, 510, 175, 56, 'mgmt', 'AWS Config', 'Rules · history', 'Records resource configuration over time and evaluates compliance rules, with optional auto-remediation.'),
+      },
+      edges: [
+        ed('mgmt', 'scp'), ed('mgmt', 'ousec'), ed('scp', 'ouprod'), ed('ouprod', 'acct'), ed('idc', 'acct'),
+        ed('acct', 'e1', 'request'),
+        ed('e1', 'e2'), ed('e2', 'e3'), ed('e3', 'e4'), ed('e4', 'e5'),
+        ed('gd', 'hub', '', { d: 'M122 486 C122 500 560 500 620 486' }),
+        ed('macie', 'hub'), ed('trail', 'hub'), ed('hub', 'detective'),
+      ],
+    },
+    concepts: [
+      ['Identities', 'Users have long-term credentials (avoid them for workloads); groups organize users; roles give temporary STS credentials to EC2, Lambda, other accounts and federated users. Protect the root user with MFA and never create root access keys.'],
+      ['Policy types', 'Identity-based; resource-based (bucket, key, queue and function policies); permissions boundaries (the maximum for one user or role); SCPs and RCPs (the maximum for accounts in an OU; they grant nothing); session policies.'],
+      ['Evaluation logic', 'Explicit deny wins, then organization policies, resource-based policies, identity-based policies, boundaries and session policies. If nothing allows the action, it is implicitly denied. Cross-account access needs an allow on both sides.'],
+      ['Multi-account', 'AWS Organizations with OUs and SCPs; Control Tower for a governed landing zone with controls; IAM Identity Center for workforce SSO with permission sets.'],
+      ['Data protection', 'KMS (customer managed keys, key policies, envelope encryption, multi-Region keys); CloudHSM for single-tenant HSMs; Secrets Manager with rotation; Parameter Store for configuration; ACM for free, auto-renewing TLS certificates.'],
+      ['Detection', 'GuardDuty for threats, Inspector for vulnerabilities, Macie for sensitive data in S3, Security Hub to aggregate findings, Detective to investigate, Config for configuration compliance and CloudTrail for API audit.'],
+      ['Network protection', 'WAF on CloudFront, ALB, API Gateway, AppSync and Cognito; Shield Standard and Advanced against DDoS; Network Firewall for VPC traffic; Firewall Manager to apply rules across accounts.'],
+    ],
+    traps: [
+      'An SCP never grants permissions: the role still needs an IAM allow. SCPs do not apply to the management account.',
+      'Let developers create roles without escalating their own privileges: permissions boundaries.',
+      'Rotate database passwords automatically: Secrets Manager, not Parameter Store.',
+      'PII in S3 means Macie; CVEs on EC2 or in container images means Inspector; compromised credentials or crypto-mining means GuardDuty.',
+      'Giving a third party access to your account: an IAM role with an external ID in its trust policy, never shared access keys.',
+    ],
+    code: [
+      ['SCP: deny every Region except the approved ones', 'json', `{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Sid": "DenyOutsideApprovedRegions",
+    "Effect": "Deny",
+    "NotAction": ["iam:*", "organizations:*", "sts:*", "cloudfront:*", "route53:*", "support:*"],
+    "Resource": "*",
+    "Condition": {
+      "StringNotEquals": { "aws:RequestedRegion": ["eu-west-1", "us-east-1"] }
+    }
+  }]
+}`],
+      ['Trust policy: a third party assumes a role with an external ID', 'json', `{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": { "AWS": "arn:aws:iam::444455556666:root" },
     "Action": "sts:AssumeRole",
-    "Condition": { "StringEquals": { "aws:PrincipalOrgID": "o-exampleorgid" } }
+    "Condition": { "StringEquals": { "sts:ExternalId": "unique-id-from-the-vendor" } }
   }]
 }`],
-    ['Workload account: SecurityRemediationRole permissions (least privilege)', 'json', `{
-  "Version": "2012-10-17",
-  "Statement": [{
-    "Sid": "FixPublicBucketsOnly",
-    "Effect": "Allow",
-    "Action": ["s3:GetBucketPublicAccessBlock", "s3:PutBucketPublicAccessBlock"],
-    "Resource": "arn:aws:s3:::*"
-  }]
-}`],
-  ],
-  codeNotes: [
-    'SQS: visibility timeout ≥ 6 × the function timeout, maxReceiveCount = 5 with a DLQ, and ReportBatchItemFailures enabled on the event source mapping.',
-    'Lambda: reserved concurrency (e.g. 5) caps the blast radius; the execution role may assume only SecurityRemediationRole and write to the state table, topic and evidence bucket.',
-    'Replace 111122223333 and o-exampleorgid with your security tooling account ID and organization ID.',
-  ],
-};
+    ],
+  },
 
-function viewSelfHeal() {
-  const card = (inner, extra = '') => `<section class="${ui.card} sm:p-7 ${extra}">${inner}</section>`;
-  const h2 = (n, t, id) => `<h2 id="${id}" class="scroll-mt-28 text-xl font-bold"><span class="mr-2 rounded-md bg-amber-500 px-2 py-0.5 text-sm font-extrabold text-slate-900">${n}</span>${t}</h2>`;
-  const pre = (text, label) => `<pre class="thin-scroll mt-3 overflow-x-auto rounded-xl border border-slate-800 bg-slate-950 p-4 font-mono text-[11.5px] leading-5 text-emerald-300 sm:text-xs" aria-label="${esc(label)}">${esc(text.replace(/^\n/, ''))}</pre>`;
-  const lead = (k, v) => `<li class="rounded-xl border border-slate-200 p-4 text-sm leading-relaxed dark:border-slate-700"><b class="block">${esc(k)}</b><span class="mt-1 block ${ui.muted}">${esc(v)}</span></li>`;
-  const toc = [['1', 'Architectural map & data flow', 'sh-1'], ['2', 'Foundational services (A–F)', 'sh-2'], ['3', 'Best practices & failure handling', 'sh-3']];
+  {
+    id: 'containers', icon: '🐳', kind: 'compute', title: 'EKS, ECS, Docker & Git Workflows',
+    tagline: 'From a Git branch to running containers: build once, store in ECR, deploy to ECS or EKS.',
+    stats: [['2 roles', 'ECS task role vs execution role'], ['Fargate', 'Serverless compute for ECS & EKS'], ['Scan on push', 'ECR image scanning'], ['Commit SHA', 'Immutable image tag']],
+    hint: 'Left to right: a commit becomes an image in ECR, then a deployment on ECS (top) or EKS (bottom).',
+    diagram: {
+      height: 580,
+      groups: [
+        grp(15, 40, 230, 500, 'ext', 'Developer & Git'),
+        grp(270, 40, 230, 500, 'mgmt', 'CI/CD pipeline'),
+        grp(525, 40, 460, 230, 'compute', 'Amazon ECS'),
+        grp(525, 295, 460, 245, 'compute', 'Amazon EKS'),
+      ],
+      nodes: {
+        dev: nd(35, 80, 190, 56, 'ext', 'Developer', 'feature/* branch', 'Works on a short-lived feature branch.'),
+        pr: nd(35, 170, 190, 56, 'ext', 'Pull request', 'Review · CI checks', 'Required reviews and passing checks (tests, lint, image scan) before merging.'),
+        repo: nd(35, 260, 190, 56, 'ext', 'main branch', 'GitHub · GitLab · Bitbucket', 'Every merge to main triggers the pipeline through a webhook or AWS CodeConnections.'),
+        dockerfile: nd(35, 350, 190, 56, 'compute', 'Dockerfile', 'Multi-stage · non-root', 'Builds a small, reproducible image. Multi-stage builds leave compilers and dev dependencies behind.'),
+        release: nd(35, 440, 190, 56, 'ext', 'Release tag', 'v1.4.0 → prod approval', 'A Git tag marks what went to production and makes rollbacks easy.'),
+        pipe: nd(290, 80, 190, 56, 'mgmt', 'CodePipeline', 'or GitHub Actions + OIDC', 'Orchestrates source, build, test, approval and deploy stages. GitHub Actions can assume an AWS role via OIDC, with no stored keys.'),
+        build: nd(290, 170, 190, 56, 'mgmt', 'CodeBuild', 'docker build · test · scan', 'Runs buildspec.yml: unit tests, docker build, and tagging the image with the commit SHA.'),
+        ecr: nd(290, 260, 190, 56, 'compute', 'Amazon ECR', 'Registry · scan on push', 'Private image registry with IAM auth, vulnerability scanning, lifecycle policies and cross-Region replication.'),
+        deploy: nd(290, 350, 190, 56, 'mgmt', 'Deploy stage', 'ECS blue/green · approval', 'Manual approval for prod, then a blue/green or rolling deployment with automatic rollback on alarms.'),
+        argo: nd(290, 440, 190, 56, 'ext', 'Argo CD / Flux', 'GitOps sync to EKS', 'For Kubernetes: the cluster pulls the desired state from Git and reconciles it.'),
+        ecssvc: nd(545, 80, 200, 56, 'compute', 'ECS service', 'Desired count · ALB', 'Keeps N tasks running behind an ALB target group, with service auto scaling.'),
+        taskdef: nd(765, 80, 200, 56, 'compute', 'Task definition', 'Image · CPU · memory · roles', 'The blueprint: container image, CPU and memory, ports, environment, secrets, logging, task role and execution role.'),
+        fargate: nd(545, 175, 200, 56, 'compute', 'Fargate tasks', 'Serverless · awsvpc ENI', 'No servers to patch. Each task gets its own ENI and security group.'),
+        ec2cap: nd(765, 175, 200, 56, 'compute', 'EC2 capacity provider', 'Auto Scaling group', 'EC2 launch type for GPUs, daemon tasks or deep cost tuning; a capacity provider scales the ASG.'),
+        cp: nd(545, 335, 200, 56, 'compute', 'EKS control plane', 'Managed · multi-AZ', 'AWS runs the Kubernetes API servers and etcd across three AZs.'),
+        ng: nd(765, 335, 200, 56, 'compute', 'Worker nodes', 'Managed groups · Karpenter', 'Managed node groups, Karpenter, Fargate profiles or EKS Auto Mode provide the data plane.'),
+        pods: nd(545, 430, 200, 56, 'compute', 'Pods · Deployments', 'Pod Identity / IRSA', 'Pods get AWS permissions through EKS Pod Identity or IAM Roles for Service Accounts, never node-wide keys.'),
+        lbc: nd(765, 430, 200, 56, 'network', 'LB Controller', 'Ingress → ALB / NLB', 'The AWS Load Balancer Controller turns Ingress and Service objects into ALBs and NLBs.'),
+      },
+      edges: [
+        ed('dev', 'pr', 'git push'), ed('pr', 'repo', 'merge'), ed('repo', 'pipe', 'trigger'),
+        ed('dockerfile', 'build'),
+        ed('pipe', 'build'), ed('build', 'ecr', 'push'), ed('ecr', 'deploy', 'new tag'),
+        ed('deploy', 'ecssvc'), ed('ecr', 'fargate', 'pull'),
+        ed('argo', 'cp', 'sync'),
+        ed('taskdef', 'ecssvc'), ed('ecssvc', 'fargate'),
+        ed('cp', 'ng'), ed('cp', 'pods'), ed('lbc', 'pods'),
+      ],
+    },
+    concepts: [
+      ['Docker basics', 'A Dockerfile builds an image in layers; a container is a running image. Keep images small (multi-stage builds, slim base images), run as a non-root user, and tag images immutably with the commit SHA.'],
+      ['Amazon ECR', 'Private registry with IAM authentication, basic or enhanced (Inspector) scanning, lifecycle policies to expire old images, cross-Region replication and pull-through caches for public registries.'],
+      ['ECS building blocks', 'Cluster, then service (desired count, load balancer, auto scaling), then tasks started from a task definition. Fargate removes servers; the EC2 launch type gives control over instances, GPUs and daemon tasks.'],
+      ['ECS IAM roles', 'The task execution role lets the ECS agent pull the image, write logs and fetch secrets. The task role is what your application code uses to call AWS services.'],
+      ['Amazon EKS', 'A managed Kubernetes control plane. Choose managed node groups, Karpenter, Fargate or EKS Auto Mode for nodes. Use EKS Pod Identity or IRSA for pod permissions and the AWS Load Balancer Controller for ingress.'],
+      ['Choosing a platform', 'ECS for the simplest AWS-native containers; EKS when you need Kubernetes APIs, Helm charts or portability; App Runner for a simple web service from an image; Lambda for short event-driven work.'],
+      ['Git workflow', 'Short-lived feature branches, pull requests with required reviews and checks, merge to main, an automated build of one immutable image, deploy to staging, approve, then promote the same image to production.'],
+      ['CI/CD on AWS', 'CodePipeline orchestrates; CodeBuild builds and tests with buildspec.yml; deployments use ECS rolling or blue/green with automatic rollback. External CI such as GitHub Actions should assume a role through OIDC instead of storing access keys.'],
+    ],
+    traps: [
+      'The container must read from DynamoDB: grant it in the task role, not the task execution role.',
+      'Run containers without managing servers: Fargate (works with both ECS and EKS).',
+      'Existing Kubernetes manifests or Helm charts, or the same tooling on premises: EKS (EKS Anywhere on premises).',
+      'Never store AWS access keys in the repository or CI variables: use IAM roles with OIDC federation.',
+      'Docker Hub rate limits break builds: use an ECR pull-through cache.',
+    ],
+    code: [
+      ['Dockerfile: multi-stage, non-root', 'dockerfile', `FROM node:22-alpine AS build
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build && npm prune --omit=dev
+
+FROM node:22-alpine
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/node_modules ./node_modules
+USER node
+EXPOSE 8080
+CMD ["node", "dist/server.js"]`],
+      ['Branch, merge, then build and push the image to ECR', 'bash', `# Feature branch -> pull request -> merge
+git switch -c feature/orders-api
+git add . && git commit -m "Add orders API"
+git push -u origin feature/orders-api    # open a pull request; merge after review
+
+# Build once, tag with the commit SHA, push to ECR
+ACCOUNT=111122223333; REGION=eu-west-1; REPO=orders-api
+REGISTRY=$ACCOUNT.dkr.ecr.$REGION.amazonaws.com
+TAG=$(git rev-parse --short HEAD)
+aws ecr get-login-password --region $REGION | \\
+  docker login --username AWS --password-stdin $REGISTRY
+docker build -t $REGISTRY/$REPO:$TAG .
+docker push $REGISTRY/$REPO:$TAG`],
+    ],
+  },
+
+  {
+    id: 'iac', icon: '📜', kind: 'mgmt', title: 'IaC (CloudFormation & Terraform)',
+    tagline: 'Infrastructure defined in Git, previewed before it changes, applied by a pipeline and checked for drift.',
+    stats: [['500', 'Resources per CloudFormation stack'], ['Change set', 'Preview before you deploy'], ['StackSets', 'Many accounts & Regions'], ['S3 + lock', 'Terraform remote state']],
+    hint: 'Both tools follow the same loop: change code, preview the diff, apply through a pipeline, then detect drift.',
+    diagram: {
+      height: 560,
+      groups: [
+        grp(15, 40, 200, 480, 'ext', 'Source control'),
+        grp(240, 40, 360, 230, 'mgmt', 'AWS CloudFormation'),
+        grp(240, 295, 360, 225, 'ext', 'Terraform'),
+        grp(625, 40, 360, 480, 'ext', 'Provisioned AWS resources'),
+      ],
+      nodes: {
+        code: nd(35, 90, 160, 56, 'ext', 'Git repo', '*.yaml · *.tf', 'Infrastructure code lives next to application code, reviewed like any other change.'),
+        prq: nd(35, 190, 160, 56, 'ext', 'Pull request', 'Lint · policy checks', 'cfn-lint, tflint, cfn-guard or Checkov, plus the change set or plan output posted for review.'),
+        cdk: nd(35, 290, 160, 56, 'ext', 'AWS CDK', 'Code → cdk synth', 'Write infrastructure in TypeScript or Python; cdk synth produces a CloudFormation template.'),
+        tmpl: nd(260, 80, 150, 56, 'mgmt', 'Template', 'YAML / JSON', 'Parameters, mappings, conditions, resources and outputs.'),
+        cs: nd(430, 80, 150, 56, 'mgmt', 'Change set', 'Preview the diff', 'Shows what will be added, modified or replaced before anything changes.'),
+        stacksets: nd(260, 175, 150, 56, 'mgmt', 'StackSets', 'Many accounts', 'Deploys one template to many accounts and Regions, integrated with Organizations.'),
+        stack: nd(430, 175, 150, 56, 'mgmt', 'Stack', 'Rollback on failure', 'The deployed unit. A failed update rolls back automatically.'),
+        plan: nd(260, 335, 150, 56, 'ext', 'terraform plan', 'Diff vs state', 'Compares the configuration with the state and the real resources and shows the planned changes.'),
+        apply: nd(430, 335, 150, 56, 'ext', 'terraform apply', 'Calls AWS APIs', 'Applies the approved plan through the AWS provider.'),
+        state: nd(260, 430, 150, 56, 'storage', 'State in S3', 'Versioned · encrypted', 'The mapping between code and real resource IDs. Keep it remote, versioned and encrypted, never in Git.'),
+        lock: nd(430, 430, 150, 56, 'storage', 'State lock', 'S3 lockfile (1.10+)', 'Stops two applies at once. Terraform 1.10+ locks natively in S3; older setups use a DynamoDB table.'),
+        vpcr: nd(645, 90, 320, 56, 'network', 'VPC · subnets · routes', 'Networking layer', 'Usually its own stack or state file, exporting IDs that other stacks import.'),
+        iamr: nd(645, 180, 320, 56, 'security', 'IAM roles & policies', 'Least privilege', 'Templates that create IAM need CAPABILITY_IAM or CAPABILITY_NAMED_IAM.'),
+        comp: nd(645, 270, 320, 56, 'compute', 'ASG · Lambda · ECS', 'Compute layer', 'Changes often, so it is kept separate from long-lived network and data stacks.'),
+        rdsr: nd(645, 360, 155, 56, 'db', 'RDS / Aurora', 'Snapshot on delete', 'DeletionPolicy: Snapshot keeps a final snapshot if the stack is deleted.'),
+        s3r: nd(810, 360, 155, 56, 'storage', 'S3 buckets', 'Retain on delete', 'DeletionPolicy: Retain keeps the bucket and its data.'),
+        drift: nd(645, 450, 320, 56, 'mgmt', 'Drift detection', 'CFN drift · terraform plan -refresh-only', 'Finds manual console changes so the code stays the source of truth.'),
+      },
+      edges: [
+        ed('code', 'prq'), ed('prq', 'tmpl', 'merge'), ed('cdk', 'tmpl', 'synth'), ed('prq', 'plan'),
+        ed('tmpl', 'cs', 'create', { lx: 420, ly: 74, anchor: 'middle' }), ed('cs', 'stack', 'execute'), ed('tmpl', 'stacksets'),
+        ed('stack', 'vpcr'), ed('stack', 'iamr'),
+        ed('plan', 'apply', 'approve', { lx: 420, ly: 329, anchor: 'middle' }), ed('state', 'plan', 'read'), ed('apply', 'lock', 'lock'),
+        ed('apply', 'comp', 'API calls'), ed('apply', 'rdsr'),
+      ],
+    },
+    concepts: [
+      ['CloudFormation basics', 'Declarative YAML or JSON templates create stacks. Use parameters, mappings, conditions and outputs; intrinsic functions such as !Ref, !GetAtt and !Sub; Export and Fn::ImportValue to share values between stacks.'],
+      ['Safe changes', 'Change sets preview updates and replacements; failed deployments roll back; stack policies and termination protection guard critical resources; DeletionPolicy and UpdateReplacePolicy (Retain or Snapshot) protect data.'],
+      ['Scale and governance', 'Nested stacks for reusable components, StackSets for many accounts and Regions, drift detection for manual changes, and CloudFormation Guard or Hooks for policy-as-code.'],
+      ['CDK and SAM', 'AWS CDK writes infrastructure in a programming language and synthesizes CloudFormation. AWS SAM is a CloudFormation transform for serverless apps, with sam build, sam local and sam deploy.'],
+      ['Terraform', 'HCL with providers for AWS and many other platforms. The plan and apply workflow relies on state, kept remotely in a versioned, encrypted S3 bucket with locking. Modules give reuse; use separate state per environment.'],
+      ['CloudFormation vs Terraform', 'CloudFormation is AWS-native, AWS manages the state, and it integrates with StackSets and Service Catalog. Terraform is multi-cloud with a large provider ecosystem, but you manage the state. SAA-C03 answers name CloudFormation for AWS-native IaC.'],
+      ['Pipelines', 'Lint and policy checks on every pull request, a change set or plan for review, manual approval for production, apply from the pipeline role only, then scheduled drift detection.'],
+    ],
+    traps: [
+      'Deploy the same baseline to every account and Region: CloudFormation StackSets.',
+      'Keep the database when the stack is deleted: DeletionPolicy: Snapshot (or Retain).',
+      'Someone changed a security group in the console: run drift detection.',
+      'Share a VPC ID with another stack: Outputs with Export, read with Fn::ImportValue.',
+      'Wait until EC2 software is installed before continuing: cfn-init with a CreationPolicy and cfn-signal.',
+    ],
+    code: [
+      ['CloudFormation: private, versioned, encrypted bucket', 'yaml', `AWSTemplateFormatVersion: "2010-09-09"
+Description: Private, versioned, KMS-encrypted assets bucket
+Parameters:
+  Env:
+    Type: String
+    AllowedValues: [dev, prod]
+Resources:
+  AssetsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub "assets-\${Env}-\${AWS::AccountId}"
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+            BucketKeyEnabled: true
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+Outputs:
+  BucketArn:
+    Value: !GetAtt AssetsBucket.Arn
+    Export:
+      Name: !Sub "\${Env}-assets-bucket-arn"`],
+      ['Terraform: remote state with locking, VPC and private subnets', 'hcl', `terraform {
+  required_providers {
+    aws = { source = "hashicorp/aws", version = "~> 6.0" }
+  }
+  backend "s3" {
+    bucket       = "acme-terraform-state"
+    key          = "network/prod.tfstate"
+    region       = "eu-west-1"
+    encrypt      = true
+    use_lockfile = true # S3-native state locking (Terraform 1.10+)
+  }
+}
+
+provider "aws" {
+  region = "eu-west-1"
+}
+
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
+resource "aws_vpc" "main" {
+  cidr_block           = "10.0.0.0/16"
+  enable_dns_hostnames = true
+  tags                 = { Name = "prod-vpc" }
+}
+
+resource "aws_subnet" "private" {
+  count             = 2
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = cidrsubnet(aws_vpc.main.cidr_block, 8, count.index + 11)
+  availability_zone = data.aws_availability_zones.available.names[count.index]
+  tags              = { Name = "prod-app-\${count.index}" }
+}`],
+    ],
+  },
+];
+
+const noteById = (id) => NOTES.find((n) => n.id === id) || NOTES[0];
+// Remediation category → the reference notes that go deeper on it.
+const CATEGORY_NOTES = { compute: ['ec2', 'lambda', 'containers'], storage: ['s3'], networking: ['vpc', 'apigw'],
+  databases: ['rds'], identity: ['security', 'apigw'], messaging: ['lambda', 'iac'] };
+
+/** Groups each diagram node under its innermost group: the responsive HTML version of the diagram. */
+function noteTiers(spec) {
+  const inside = (n, g) => { const cx = n.x + n.w / 2, cy = n.y + n.h / 2; return cx > g.x && cx < g.x + g.w && cy > g.y && cy < g.y + g.h; };
+  const tiers = spec.groups.map((g) => ({ g, items: [] }));
+  for (const n of Object.values(spec.nodes)) {
+    const host = tiers.filter((t) => inside(n, t.g)).sort((a, b) => a.g.w * a.g.h - b.g.w * b.g.h)[0];
+    host?.items.push(n);
+  }
+  return tiers.filter((t) => t.items.length);
+}
+
+function viewNotes() {
+  const note = noteById(S.notesTab), i = NOTES.indexOf(note), color = AWSC[note.kind];
+  const prev = NOTES[i - 1], next = NOTES[i + 1];
+  const tab = (n, k) => {
+    const on = n === note;
+    return `<button type="button" role="tab" aria-selected="${on}" aria-controls="note-panel" data-action="note-tab" data-note="${n.id}"
+      class="flex w-56 shrink-0 items-center gap-2.5 rounded-xl border p-2.5 text-left text-sm transition sm:w-auto ${on
+        ? 'border-transparent bg-slate-900 text-white shadow dark:bg-white dark:text-slate-900'
+        : 'border-slate-200 bg-white hover:border-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-slate-500'}"
+      style="${on ? `box-shadow:inset 4px 0 0 ${AWSC[n.kind]}` : ''}">
+      <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-base" style="background:${AWSC[n.kind]}22" aria-hidden="true">${n.icon}</span>
+      <span class="min-w-0"><span class="block text-[10px] font-bold uppercase tracking-wider opacity-60">Topic ${k + 1}</span>
+        <span class="block font-semibold leading-tight">${esc(n.title)}</span></span>
+    </button>`;
+  };
+  const tiers = noteTiers(note.diagram);
   return `
   <div class="mb-6 flex flex-wrap items-end justify-between gap-3">
     <div class="max-w-3xl">
-      <div class="${ui.label} !text-amber-600 dark:!text-amber-400">Master module · Security, governance & operations</div>
-      <h1 class="text-2xl font-bold sm:text-3xl">Automated Security Remediation &amp; Self-Healing Architecture</h1>
-      <p class="mt-1 text-sm ${ui.muted}">How AWS detects a threat or misconfiguration, routes the signal, decides, fixes it automatically and keeps tamper-proof evidence, and how each SAA-C03 service plays its part.</p>
+      <div class="${ui.label}">Reference library · SAA-C03</div>
+      <h1 class="text-2xl font-bold sm:text-3xl">AWS Reference Notes</h1>
+      <p class="mt-1 text-sm ${ui.muted}">Nine architecture topics, each with an interactive cloud diagram, key numbers, core concepts, exam traps and copy-ready code.</p>
     </div>
-    <button data-action="selfheal-md" class="${B('secondary')}">⬇ Download as Markdown</button>
+    <button data-action="notes-md" class="${B('secondary')}">⬇ Download all notes (Markdown)</button>
   </div>
-  <nav class="mb-6 flex flex-wrap gap-2" aria-label="Module sections">
-    ${toc.map(([n, t, id]) => `<button data-action="jump" data-target="${id}" class="${B('ghost', '!px-3 !py-1.5 text-xs border border-slate-200 dark:border-slate-700')}"><b class="text-amber-600 dark:text-amber-400">${n}</b> ${t}</button>`).join('')}
-  </nav>
 
-  <div class="space-y-6">
-    ${card(`${h2(1, 'Architectural map &amp; remediation data flow', 'sh-1')}
-      <p class="mt-2 text-sm ${ui.muted}">Detection on the left, the isolated Remediation Zone on the right. The flows are animated; click any component for its role.</p>
-      <div class="mt-4">${archDiagram(SELFHEAL_SVG, 'selfheal', {
-        title: 'Automated remediation pipeline: sensors in the workload account send findings across the remediation zone boundary to Security Hub, EventBridge, SQS, Lambda and SSM in the security tooling account, which assume a single cross-account role to apply the fix, then record evidence and notify.',
-        hint: 'The red dashed line is the <b>Remediation Zone boundary</b>. Amber arrows are the only path back into the workload: sts:AssumeRole.' })}</div>
-      <div class="${ui.label} mt-6">Text architecture map</div>
-      ${pre(SELFHEAL.map, 'Remediation architecture map')}
-      <div class="mt-6 grid gap-4 lg:grid-cols-2">
-        ${SELFHEAL.traces.map((t) => `<div class="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
-          <h3 class="font-semibold">${esc(t.title)}</h3>
-          <ol class="mt-3 space-y-3">${t.steps.map(([time, stage, text], i) => `<li class="flex gap-3 text-sm">
-            <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-500 text-xs font-bold text-slate-900">${i + 1}</span>
-            <div class="leading-relaxed"><b>${esc(stage)}</b> <span class="font-mono text-[11px] ${ui.muted}">${esc(time)}</span><br>${esc(text)}</div></li>`).join('')}</ol>
+  <div class="thin-scroll -mx-1 mb-3 flex gap-2 overflow-x-auto px-1 pb-2 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 lg:grid-cols-3" role="tablist" aria-label="Reference topics">
+    ${NOTES.map(tab).join('')}
+  </div>
+  <div class="mb-6 flex flex-wrap gap-x-4 gap-y-1.5 text-xs ${ui.muted}" aria-label="AWS colour legend">
+    ${AWSC_LEGEND.map(([k, l]) => `<span class="inline-flex items-center gap-1.5"><span class="h-3 w-3 rounded-sm" style="background:${AWSC[k]}"></span>${esc(l)}</span>`).join('')}
+  </div>
+
+  <section id="note-panel" role="tabpanel" aria-label="${esc(note.title)}" class="${ui.card} overflow-hidden !p-0">
+    <div class="h-1.5" style="background:${color}"></div>
+    <div class="p-5 sm:p-7">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div class="flex min-w-0 items-start gap-3">
+          <span class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-2xl" style="background:${color}22" aria-hidden="true">${note.icon}</span>
+          <div class="min-w-0">
+            <div class="${ui.label}" style="color:${color}">Topic ${i + 1} of ${NOTES.length}</div>
+            <h2 class="text-xl font-bold sm:text-2xl">${esc(note.title)}</h2>
+            <p class="mt-1 text-sm ${ui.muted}">${esc(note.tagline)}</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        ${note.stats.map(([v, l]) => `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3.5 dark:border-slate-700 dark:bg-slate-900/50" style="border-left:4px solid ${color}">
+          <div class="font-mono text-lg font-bold leading-tight sm:text-xl">${esc(v)}</div>
+          <div class="mt-1 text-xs leading-snug ${ui.muted}">${esc(l)}</div></div>`).join('')}
+      </div>
+
+      <h3 class="mt-7 font-semibold">Cloud architecture</h3>
+      <div class="mt-3">${archDiagram(note.diagram, `note-${note.id}`, {
+        title: `${note.title}: reference architecture. ${note.hint}`,
+        hint: `${esc(note.hint)} Click any component for its role.` })}</div>
+      <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-${Math.min(tiers.length, 4)}">
+        ${tiers.map(({ g, items }) => `<div class="rounded-xl border border-slate-200 bg-white p-3.5 dark:border-slate-700 dark:bg-slate-900/40" style="border-top:3px solid ${g.color}">
+          <div class="text-[11px] font-bold uppercase tracking-wider" style="color:${g.color}">${esc(g.label)}</div>
+          <ul class="mt-2 space-y-1.5">${items.map((n) => `<li class="flex items-start gap-2 text-sm leading-snug">
+            <span class="mt-1 h-2.5 w-2.5 shrink-0 rounded-sm" style="background:${n.color}"></span>
+            <span><b>${esc(n.label)}</b> <span class="${ui.muted}">· ${esc(n.sub)}</span></span></li>`).join('')}</ul>
         </div>`).join('')}
       </div>
-      <h3 class="mt-6 font-semibold">The boundary: where operations end and remediation begins</h3>
-      <ul class="mt-3 grid gap-3 md:grid-cols-2">${SELFHEAL.boundary.map(([k, v]) => lead(k, v)).join('')}</ul>
-      ${pre(SELFHEAL.accounts, 'Account boundary')}`)}
 
-    ${card(`${h2(2, 'Foundational AWS services: the master backbone', 'sh-2')}
-      <p class="mt-2 text-sm ${ui.muted}">Each service: what it is, how it works, its exact role in automated remediation, and the exam takeaway.</p>
-      ${SELFHEAL.groups.map((g) => `<h3 class="mt-7 text-lg font-bold"><span class="text-amber-600 dark:text-amber-400">${g.id}.</span> ${esc(g.title)}</h3>
-        <div class="mt-3 grid gap-4 xl:grid-cols-2">${g.items.map(([name, what, how, role, tip]) => `<article class="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
-          <h4 class="font-bold">${esc(name)}</h4>
-          <p class="mt-1 text-sm leading-relaxed">${esc(what)}</p>
-          <div class="${ui.label} mt-3">How it works</div>
-          <ul class="mt-1 list-disc space-y-1 pl-5 text-sm leading-relaxed">${how.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
-          <div class="${ui.label} mt-3 !text-rose-600 dark:!text-rose-400">Role in automated remediation</div>
-          <ul class="mt-1 list-disc space-y-1 pl-5 text-sm leading-relaxed">${role.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
-          <p class="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900 dark:bg-amber-500/10 dark:text-amber-200"><b>Exam takeaway:</b> ${esc(tip)}</p>
-        </article>`).join('')}</div>`).join('')}`)}
+      <h3 class="mt-7 font-semibold">Core concepts</h3>
+      <ul class="mt-3 grid gap-3 md:grid-cols-2">${note.concepts.map(([k, v]) => `<li class="rounded-xl border border-slate-200 p-4 text-sm leading-relaxed dark:border-slate-700">
+        <b class="block">${esc(k)}</b><span class="mt-1 block ${ui.muted}">${esc(v)}</span></li>`).join('')}</ul>
 
-    ${card(`${h2(3, 'Production best practices &amp; failure handling', 'sh-3')}
-      <h3 class="mt-5 font-semibold">Isolating remediation logic from production logic</h3>
-      <ul class="mt-3 grid gap-3 md:grid-cols-2">${SELFHEAL.isolation.map(([k, v]) => lead(k, v)).join('')}</ul>
-      <h3 class="mt-6 font-semibold">State, idempotency and retry / back-off</h3>
-      <ul class="mt-3 grid gap-3 md:grid-cols-2">${SELFHEAL.state.map(([k, v]) => lead(k, v)).join('')}</ul>
-      ${pre(SELFHEAL.failure, 'Failure handling flow')}
-      <h3 class="mt-6 font-semibold">Reference implementation</h3>
-      <ul class="mt-2 list-disc space-y-1 pl-5 text-sm ${ui.muted}">${SELFHEAL.codeNotes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>
-      ${SELFHEAL.code.map(([title, lang, src], i) => `<div class="mt-5">
+      <div class="mt-6 rounded-xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-500/40 dark:bg-amber-500/10">
+        <div class="text-sm font-bold text-amber-900 dark:text-amber-200">⚠ Exam traps</div>
+        <ul class="mt-2 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-amber-900 dark:text-amber-100">${note.traps.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>
+      </div>
+
+      ${(note.code || []).map(([title, lang, src], k) => `<div class="mt-6">
         <div class="flex items-center justify-between gap-2"><div class="text-sm font-semibold">${esc(title)}</div>
-          <button data-action="copy-code" data-index="${i}" class="${B('secondary', '!px-2.5 !py-1 text-xs')}">Copy ${esc(lang)}</button></div>
+          <button data-action="copy-code" data-note="${note.id}" data-index="${k}" class="${B('secondary', '!px-2.5 !py-1 text-xs')}">Copy ${esc(lang)}</button></div>
         <pre class="thin-scroll mt-2 max-h-[520px] overflow-auto rounded-xl border border-slate-800 bg-slate-950 p-4 font-mono text-[11.5px] leading-5 text-sky-200 sm:text-xs"><code>${esc(src)}</code></pre>
-      </div>`).join('')}`)}
-  </div>`;
+      </div>`).join('')}
+
+      <div class="mt-8 flex flex-wrap justify-between gap-3 border-t border-slate-200 pt-5 dark:border-slate-700">
+        ${prev ? `<button data-action="note-tab" data-note="${prev.id}" data-scroll="1" class="${B('secondary')}">← ${esc(prev.title)}</button>` : '<span></span>'}
+        ${next ? `<button data-action="note-tab" data-note="${next.id}" data-scroll="1" class="${B('primary')}">${esc(next.title)} →</button>` : ''}
+      </div>
+    </div>
+  </section>`;
 }
 
-/** The whole module as Markdown, for reuse outside the portal. */
-function selfHealMarkdown() {
-  const fence = (t, lang = 'text') => `\`\`\`${lang}\n${t.replace(/^\n/, '')}\n\`\`\``;
-  const out = ['# Automated Security Remediation & Self-Healing Architecture', '',
-    '## 1. Architectural map & remediation data flow', '', fence(SELFHEAL.map), ''];
-  for (const t of SELFHEAL.traces) {
-    out.push(`### ${t.title}`, '', ...t.steps.map(([time, stage, text], i) => `${i + 1}. **${stage}** (${time}): ${text}`), '');
-  }
-  out.push('### The boundary: where operations end and remediation begins', '', ...SELFHEAL.boundary.map(([k, v]) => `- **${k}.** ${v}`), '', fence(SELFHEAL.accounts), '',
-    '## 2. Foundational AWS services: the master backbone', '');
-  for (const g of SELFHEAL.groups) {
-    out.push(`### ${g.id}. ${g.title}`, '');
-    for (const [name, what, how, role, tip] of g.items) {
-      out.push(`#### ${name}`, '', what, '', '**How it works**', '', ...how.map((x) => `- ${x}`), '',
-        '**Role in automated remediation**', '', ...role.map((x) => `- ${x}`), '', `> **Exam takeaway:** ${tip}`, '');
-    }
-  }
-  out.push('## 3. Production best practices & failure handling', '', '### Isolating remediation logic from production logic', '',
-    ...SELFHEAL.isolation.map(([k, v]) => `- **${k}.** ${v}`), '', '### State, idempotency and retry / back-off', '',
-    ...SELFHEAL.state.map(([k, v]) => `- **${k}.** ${v}`), '', fence(SELFHEAL.failure), '', '### Reference implementation', '',
-    ...SELFHEAL.codeNotes.map((n) => `- ${n}`), '');
-  for (const [title, lang, src] of SELFHEAL.code) out.push(`#### ${title}`, '', fence(src, lang), '');
+/** All nine topics as Markdown, for offline revision. */
+function notesMarkdown() {
+  const fence = (t, lang = 'text') => `\`\`\`${lang}\n${t}\n\`\`\``;
+  const out = ['# AWS Reference Notes (SAA-C03)', ''];
+  NOTES.forEach((n, i) => {
+    const d = n.diagram;
+    out.push(`## ${i + 1}. ${n.title}`, '', n.tagline, '', '| Key number | Meaning |', '|---|---|', ...n.stats.map(([v, l]) => `| ${v} | ${l} |`), '',
+      '### Architecture', '', ...noteTiers(d).map(({ g, items }) => `- **${g.label}:** ${items.map((x) => `${x.label} (${x.sub})`).join('; ')}`), '',
+      '**Flows**', '', ...d.edges.map((e) => `- ${d.nodes[e.from].label} → ${d.nodes[e.to].label}${e.label ? ` (${e.label})` : ''}`), '',
+      '### Core concepts', '', ...n.concepts.map(([k, v]) => `- **${k}.** ${v}`), '',
+      '### Exam traps', '', ...n.traps.map((t) => `- ${t}`), '');
+    for (const [title, lang, src] of n.code || []) out.push(`#### ${title}`, '', fence(src, lang), '');
+  });
   return out.join('\n');
 }
 
@@ -4162,6 +4541,10 @@ function remediationCard(k, required) {
     <div class="mt-5 flex flex-wrap items-center gap-2">
       <span class="text-xs ${ui.muted}">Masterclasses:</span>
       ${c.concepts.map((cid) => `<button data-action="open-drawer" data-concept="${cid}" class="${B('secondary', '!px-2.5 !py-1 text-xs')}">${esc(CONCEPTS[cid].name)}</button>`).join('')}
+    </div>
+    <div class="mt-2 flex flex-wrap items-center gap-2">
+      <span class="text-xs ${ui.muted}">Reference notes:</span>
+      ${(CATEGORY_NOTES[k] || []).map((id) => `<button data-action="note-open" data-note="${id}" class="${B('ghost', '!px-2.5 !py-1 text-xs border border-slate-200 dark:border-slate-700')}">${noteById(id).icon} ${esc(noteById(id).title)}</button>`).join('')}
     </div>
 
     <label class="mt-6 flex cursor-pointer items-start gap-3 rounded-xl border-2 p-4 transition ${done ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10' : 'border-dashed border-slate-300 hover:border-amber-400 dark:border-slate-600'}">
@@ -4224,10 +4607,10 @@ function viewRemediation() {
     ${weak.length ? `<div class="text-right"><div class="font-mono text-lg font-bold">${mastered}/${weak.length}</div><div class="text-xs ${ui.muted}">topics mastered</div></div>` : ''}
   </div>
 
-  <button type="button" data-action="nav" data-view="selfheal" class="mb-6 flex w-full items-center gap-4 rounded-2xl border border-rose-400/50 bg-gradient-to-r from-rose-500/10 via-amber-500/10 to-transparent p-4 text-left transition hover:border-rose-400">
-    <span class="text-3xl" aria-hidden="true">🛡️</span>
-    <span class="min-w-0 flex-1"><span class="block font-semibold">Master module: Automated Security Remediation &amp; Self-Healing Architecture</span>
-      <span class="block text-xs ${ui.muted}">Detection → EventBridge → Lambda/SSM → fix → forensic evidence, with every service explained and reference code.</span></span>
+  <button type="button" data-action="nav" data-view="notes" class="mb-6 flex w-full items-center gap-4 rounded-2xl border border-violet-400/50 bg-gradient-to-r from-violet-500/10 via-amber-500/10 to-transparent p-4 text-left transition hover:border-violet-400">
+    <span class="text-3xl" aria-hidden="true">📚</span>
+    <span class="min-w-0 flex-1"><span class="block font-semibold">AWS Reference Notes: 9 topics with architecture diagrams</span>
+      <span class="block text-xs ${ui.muted}">VPC tiers, EC2 patching, Lambda, RDS clustering, API Gateway &amp; Cognito, S3, IAM &amp; security, containers &amp; Git, CloudFormation &amp; Terraform.</span></span>
     <span class="text-sm font-semibold text-amber-600 dark:text-amber-400">Open →</span>
   </button>
 
@@ -5224,7 +5607,7 @@ function viewGate() {
 }
 
 const VIEWS = { welcome: viewWelcome, diagnostic: viewDiagnostic, analytics: viewAnalytics, remediation: viewRemediation,
-  coach: viewCoach, practice: viewPractice, result: viewResult, selfheal: viewSelfHeal };
+  coach: viewCoach, practice: viewPractice, result: viewResult, notes: viewNotes };
 const logoSrc = () => S.logo || CONFIG.logo;
 
 function applyLogo() {
@@ -5297,6 +5680,7 @@ function renderUnsafe() {
     return;
   }
   gate.innerHTML = '';
+  if (S.view === 'selfheal') S.view = 'notes';   // the module this replaced
   if (!VIEWS[S.view]) S.view = 'welcome';
   if (S.view === 'coach' && !QUESTIONS.get(S.drill.currentId)) pickNextDrill(false);
   renderNav();
@@ -5359,9 +5743,14 @@ document.addEventListener('click', (e) => {
     case 'svl-pause': diagramPaused = !diagramPaused; render(); break;
     case 'reload': location.reload(); break;
     case 'jump': document.getElementById(ds.target)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); break;
-    case 'selfheal-md': download('aws-automated-security-remediation.md', selfHealMarkdown(), 'text/markdown'); toast('Markdown guide downloaded.', 'ok'); break;
+    case 'note-tab':
+      S.notesTab = ds.note; diagramSel[`note-${ds.note}`] = null; persist(); render();
+      if (ds.scroll) document.getElementById('note-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      break;
+    case 'note-open': S.notesTab = ds.note; go('notes'); window.scrollTo({ top: 0 }); break;
+    case 'notes-md': download('aws-reference-notes.md', notesMarkdown(), 'text/markdown'); toast('Reference notes downloaded.', 'ok'); break;
     case 'copy-code': {
-      const src = SELFHEAL.code[Number(ds.index)]?.[2] || '';
+      const src = noteById(ds.note).code?.[Number(ds.index)]?.[2] || '';
       Promise.resolve().then(() => navigator.clipboard.writeText(src))
         .then(() => toast('Copied to clipboard.', 'ok'), () => toast('Copy failed. Select the code and copy it manually.', 'error'));
       break;
