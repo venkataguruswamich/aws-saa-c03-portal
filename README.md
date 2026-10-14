@@ -15,9 +15,9 @@ You can also double-click `index.html`. Everything works, **except** YouTube emb
 ## Learning flow
 
 1. **Identity (Phase 1, required).** Full name, AWS experience level and target exam date. Until this is submitted, nothing else renders. See *Onboarding gate* below.
-2. **Diagnostic (Phase 2).** A 20-question pool in four styles: multiple choice, choose-two multi-select, true/false, and fill in the blank. Question order and answer choices are reshuffled (Fisher-Yates, Web Crypto RNG) on every page load. Answers are stored against the original option indices, so scoring never drifts. You get no feedback until you submit.
+2. **Diagnostic (Phase 2).** Two forms of 20 questions each, D01–D20 (Form A) and D21–D40 (Form B), in the real exam's two formats only: a single answer from 4 options, or "Choose TWO" from 5 options. The first attempt uses Form A; each retake switches form, so a learner never sees the same 20 questions twice in a row. Question order and answer choices are reshuffled (Fisher-Yates, Web Crypto RNG) on every page load. Answers are stored against the original option indices, so scoring never drifts. You get no feedback until you submit.
 3. **Analytics Hub.** Domain tracking table, a heatmap of domain × skill area, the Blind Spot Report (any concept below 72%, which is roughly 720/1000), a concept tracking table and an answer log.
-4. **Remediation Zone (Phase 3).** The diagnostic is scored across six categories: Compute, Storage, Networking, Databases & Analytics, Security & Identity, and Management & Messaging. Each category below 72% is flagged **Must Master**. Every category covers each blueprint service in plain language (what it is, when to use it, an exam tip), step-by-step rules and a production example. Each also has an **animated serverless web application diagram**: an SVG whose data flows move using CSS `stroke-dashoffset` keyframes, with the category's components highlighted. Click a component to see what it does. The diagram covers:
+4. **Remediation Zone (Phase 3).** It opens with **"Your weak concepts at a glance"**: a short, plain-language card for every concept missed on the diagnostic. Each card has a summary, key facts, a common trap and the correct answer that was missed, with links to the full masterclass. The diagnostic is scored across six categories: Compute, Storage, Networking, Databases & Analytics, Security & Identity, and Management & Messaging. Each category below 72% is flagged **Must Master**. Every category covers each blueprint service in plain language (what it is, when to use it, an exam tip), step-by-step rules and a production example. Each also has an **animated serverless web application diagram**: an SVG whose data flows move using CSS `stroke-dashoffset` keyframes, with the category's components highlighted. Click a component to see what it does. The diagram covers:
    - Users
    - CloudFront and the S3 static website
    - Cognito
@@ -27,13 +27,16 @@ You can also double-click `index.html`. Everything works, **except** YouTube emb
 
    **Practice exams stay locked until every weak topic is marked "Mastered".**
 5. **Coaching Core.** Adaptive drills with the Instant Tutor and the **Master It** masterclass drawer.
-6. **Practice Exams (Phase 4).** Six exam-style sets of 10 questions each, in a YouTube-style player:
-   - a centered question and large choices;
-   - a 2:00 countdown per question that turns red with overtime;
-   - a question timeline and "Lock answer";
-   - a slide-out explanation canvas marking every option correct or incorrect.
+6. **Practice Exams (Phase 4).** Six full practice exams of **25 scenario questions** each (150 in total), run under real exam conditions:
+   - a rules screen before starting;
+   - a **50-minute countdown** that submits the exam automatically at 0:00, plus a per-question pace indicator;
+   - **flag for review**, a question navigator and a pre-submit review screen;
+   - **no answers revealed until you submit**;
+   - a scaled score from 100 to 1000, with a pass mark of 720, and a per-domain breakdown.
 
-   Finishing a set sends a `practice_complete` event.
+   After submitting, a **YouTube-style review player** reveals every answer, with a slide-out explanation canvas marking each option correct or incorrect.
+
+   Each exam can show a **YouTube walkthrough video**. Paste the URLs into `CONFIG.practiceVideos` in `index.html`. Submitting an exam sends a `practice_complete` event.
 7. **Final Result (Phase 5).** Certification Readiness Score = diagnostic 20% + remediation 10% + practice sets 70% (unfinished sets count as 0%). It shows:
    - each of the **4 exam domains** with a READY / NOT READY indicator;
    - a binary **"Highly ready to clear the live exam: YES / NOT YET"**;
@@ -67,6 +70,7 @@ Edit the `CONFIG` block at the top of the `<script>`:
 | `stuckThreshold` | Default `0.72`. |
 | `masterItAfterWrong` | Default `2`. The number of misses before Master It is highlighted as recommended. |
 | `trainingSets` | Hard-code a YouTube video or playlist URL for each concept. Links pasted in the drawer override these. |
+| `practiceVideos` | A YouTube video or playlist URL for each of the 6 practice exams (`1`–`6`). |
 
 To add questions, append to `DIAGNOSTIC` or `DRILLS`. Each question needs a `concept` key that exists in `CONCEPTS`.
 

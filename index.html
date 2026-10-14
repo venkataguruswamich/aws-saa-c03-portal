@@ -174,6 +174,9 @@ const CONFIG = {
     sqs: '', fanout: '', circuit: '', multiaz: '', 'aurora-global': '', asg: '', nat: '', vpce: '',
     'sg-nacl': '', storage: '', fsr: '', 'ga-cf': '', s3ta: '', waf: '', identity: '',
   },
+  // YouTube walkthrough video for each of the 6 practice exams (video or playlist URL).
+  // When set, it appears on the exam's start screen and results page, and its card shows a "▶ Video" badge.
+  practiceVideos: { 1: '', 2: '', 3: '', 4: '', 5: '', 6: '' },
 };
 
 /* =====================================================================
@@ -659,6 +662,28 @@ Object.assign(CONCEPTS, {
     traps: ['A low-cardinality partition key (date, status) creates hot partitions.', 'Streams capture changes; they are not a backup.'],
     triggers: ['key-value', 'millisecond latency at scale', 'hot partition', 'microsecond', 'active-active'],
   },
+  analytics: {
+    name: 'Analytics & Streaming', area: 'data', domain: 'performance', related: ['dynamodb', 's3-core'],
+    services: ['Kinesis Data Streams', 'Amazon Data Firehose', 'Amazon Athena', 'Amazon Redshift', 'Amazon EMR'],
+    yt: 'AWS SAA-C03 Kinesis Data Streams Firehose Athena Redshift EMR',
+    summary: 'Streaming services collect data in real time; analytics services query it at scale. Choose by latency, consumers and whether you want to manage anything.',
+    facts: [
+      'Kinesis Data Streams: ordered records per shard (by partition key), many independent consumers, replay within the retention period (24 hours by default, up to 365 days).',
+      'Amazon Data Firehose: fully managed delivery to S3, Redshift or OpenSearch with buffering, compression and Parquet/ORC conversion. No consumer code.',
+      'Athena: serverless SQL directly on S3, billed per data scanned. Parquet and partitioning cut cost.',
+      'Redshift: columnar data warehouse for complex BI SQL; Spectrum queries S3; Serverless bills only while queries run.',
+      'EMR: managed Hadoop/Spark clusters for large-scale processing; use Spot for task nodes.',
+    ],
+    table: [
+      ['Real-time stream, several consumers, replay', 'Kinesis Data Streams'],
+      ['Load streaming data into S3/Redshift, no code', 'Amazon Data Firehose'],
+      ['Ad-hoc SQL on S3', 'Athena'],
+      ['Data warehouse / BI dashboards', 'Redshift'],
+      ['Big data Spark / Hadoop processing', 'EMR'],
+    ],
+    traps: ['SQS is not a stream: each message is consumed once, then deleted.', 'Athena cannot query Glacier Deep Archive objects directly.'],
+    triggers: ['real-time stream', 'replay', 'clickstream', 'ad-hoc SQL on S3', 'data warehouse', 'Spark'],
+  },
 });
 
 /* =====================================================================
@@ -757,7 +782,7 @@ const CATEGORIES = {
              no matching ALLOW  ==>  implicit DENY`,
   },
   databases: {
-    name: 'Databases & Analytics', icon: '🛢️', concepts: ['multiaz', 'aurora-global', 'dynamodb'],
+    name: 'Databases & Analytics', icon: '🛢️', concepts: ['multiaz', 'aurora-global', 'dynamodb', 'analytics'],
     blurb: 'RDS, Aurora, DynamoDB, ElastiCache, plus Redshift, EMR and Athena for analytics.',
     steps: [
       ['Pick the engine by access pattern', 'Relational joins and transactions → RDS or Aurora. Key-value at any scale → DynamoDB. Repeated hot reads → ElastiCache or DAX.'],
@@ -1217,18 +1242,29 @@ const DRILLS = [
    ===================================================================== */
 const TF = ['True', 'False'];
 DIAGNOSTIC.push(
+  /* ---------- Form A (D01-D20), continued ---------- */
   {
-    id: 'D11', type: 'tf', concept: 'vpc-core', domain: 'secure', options: TF, answer: 1,
-    scenario: 'True or false: A subnet becomes a public subnet as soon as you enable "auto-assign public IPv4 address" on it, even if its route table has no route to an internet gateway.',
-    proof: 'False. "Public" is a routing property: the subnet\'s route table must send 0.0.0.0/0 to an internet gateway. A public IP without that route has no path to the internet.',
-    trigger: '"Public subnet" ⇔ route 0.0.0.0/0 → internet gateway.',
+    id: 'D11', concept: 'vpc-core', domain: 'secure',
+    scenario: 'A team enabled "auto-assign public IPv4 address" on a new subnet, but web servers launched there still cannot be reached from the internet. What is missing?',
+    options: [
+      'A route for 0.0.0.0/0 to an internet gateway in the subnet\'s route table.',
+      'A NAT gateway in the same subnet.',
+      'An interface VPC endpoint for Amazon EC2.',
+      'A larger CIDR block for the subnet.',
+    ],
+    answer: 0,
+    proof: 'A subnet is public only when its route table sends 0.0.0.0/0 to an internet gateway. A public IP without that route has no path to the internet.',
+    eliminate: { 1: 'NAT gateways give private subnets outbound-only access; they never accept inbound connections.', 2: 'VPC endpoints reach AWS APIs privately; they do not provide internet access.', 3: 'Address space has nothing to do with reachability.' },
+    trigger: '"Public subnet" = route 0.0.0.0/0 → internet gateway.',
   },
   {
-    id: 'D12', type: 'fill', concept: 'vpc-core', domain: 'resilient',
-    scenario: 'An EC2 web server in a new VPC has a public IP address but cannot be reached from the internet. Its subnet\'s route table needs a 0.0.0.0/0 route to which VPC component? ______',
-    accept: ['internet gateway', 'igw', 'aws internet gateway', 'internet gw'], key: 'Internet gateway (IGW)',
-    proof: 'An internet gateway is the VPC component that translates between public and private addresses and carries traffic to and from the internet. Without the route to it, the subnet is private.',
-    trigger: 'Inbound internet access → IGW route + public IP.',
+    id: 'D12', concept: 'vpc-core', domain: 'performance',
+    scenario: 'A solutions architect creates a subnet with the CIDR block 10.0.1.0/28. How many IP addresses can be assigned to resources in this subnet?',
+    options: ['16', '14', '11', '8'],
+    answer: 2,
+    proof: 'A /28 has 16 addresses. AWS reserves 5 in every subnet (network address, VPC router, DNS, future use and broadcast), leaving 11 usable.',
+    eliminate: { 0: '16 is the total before the 5 AWS reservations.', 1: '14 subtracts only 2 addresses, as in traditional networking; AWS reserves 5.', 3: '8 subtracts too many.' },
+    trigger: 'Usable IPs per subnet = 2^(32 − prefix) − 5.',
   },
   {
     id: 'D13', type: 'multi', concept: 'ec2-core', domain: 'cost',
@@ -1275,30 +1311,60 @@ DIAGNOSTIC.push(
     trigger: 'Access drops with age → lifecycle tiering → Deep Archive for long retention.',
   },
   {
-    id: 'D16', type: 'fill', concept: 's3-core', domain: 'secure',
-    scenario: 'To make sure no bucket in an account can ever be made public, even by a misconfigured bucket policy or ACL, you enable S3 ______ at the account level.',
-    accept: ['block public access', 's3 block public access', 'public access block', 'block all public access'], key: 'Block Public Access',
-    proof: 'S3 Block Public Access settings at the account level override bucket policies and ACLs that would grant public access, so one setting guards every bucket.',
+    id: 'D16', concept: 's3-core', domain: 'secure',
+    scenario: 'A company must guarantee that no S3 bucket in an AWS account can ever be made public, even if someone later attaches a public bucket policy or ACL. What should a solutions architect do?',
+    options: [
+      'Enable S3 Block Public Access at the account level.',
+      'Enable versioning on every bucket.',
+      'Enable default SSE-KMS encryption on every bucket.',
+      'Enable MFA Delete on every bucket.',
+    ],
+    answer: 0,
+    proof: 'Account-level Block Public Access overrides any bucket policy or ACL that would grant public access, so one setting protects every current and future bucket.',
+    eliminate: { 1: 'Versioning protects against deletion, not exposure.', 2: 'Encryption at rest does not stop public reads through the S3 API.', 3: 'MFA Delete only protects version deletion.' },
     trigger: '"Never public, whatever the policy" → account-level Block Public Access.',
   },
   {
-    id: 'D17', type: 'fill', concept: 'iam-core', domain: 'secure',
-    scenario: 'An application on EC2 must read a DynamoDB table. Instead of storing access keys on the instance, you attach an IAM ______ to the instance through an instance profile so it receives temporary credentials.',
-    accept: ['role', 'iam role', 'instance role', 'ec2 role'], key: 'Role (IAM role)',
-    proof: 'An IAM role attached via an instance profile gives the instance short-lived STS credentials that rotate automatically. No secret ever sits on disk.',
-    trigger: '"No access keys on the server" → IAM role.',
+    id: 'D17', concept: 'iam-core', domain: 'secure',
+    scenario: 'An application running on EC2 must read items from a DynamoDB table. Security policy forbids storing long-term credentials on servers. What is the MOST secure solution?',
+    options: [
+      'Attach an IAM role with read access to the table through an instance profile.',
+      'Create an IAM user and store its access keys in environment variables on the instance.',
+      'Store an IAM user\'s access keys in the EC2 user data script.',
+      'Use the account root user\'s access keys, protected with MFA.',
+    ],
+    answer: 0,
+    proof: 'An instance profile delivers short-lived STS credentials for the role, rotated automatically. No secret is ever stored on the instance.',
+    eliminate: { 1: 'Environment variables still hold long-term keys on the server.', 2: 'User data is readable from the instance metadata and is not secret storage.', 3: 'Root keys should never exist, let alone be used by an application.' },
+    trigger: '"No access keys on the server" → IAM role via instance profile.',
   },
   {
-    id: 'D18', type: 'tf', concept: 'iam-core', domain: 'secure', options: TF, answer: 1,
-    scenario: 'True or false: If an IAM user\'s identity policy allows s3:DeleteObject but a Service Control Policy on the account explicitly denies it, the user can still delete objects because identity policies take precedence.',
-    proof: 'False. An explicit deny anywhere in the evaluation chain (SCP, boundary, identity or resource policy) always wins. SCPs cap the maximum permissions of every principal in the account.',
-    trigger: 'Explicit deny beats every allow.',
+    id: 'D18', concept: 'iam-core', domain: 'secure',
+    scenario: 'An IAM user\'s identity policy allows s3:DeleteObject, but a Service Control Policy attached to the account explicitly denies s3:DeleteObject. What happens when the user tries to delete an object?',
+    options: [
+      'The request is denied, because an explicit deny in any policy overrides every allow.',
+      'The request is allowed, because identity policies take precedence over SCPs.',
+      'The request is allowed only if the bucket policy also allows it.',
+      'The request is allowed, because SCPs apply only to the root user.',
+    ],
+    answer: 0,
+    proof: 'IAM evaluation checks for an explicit deny first. An SCP deny caps the maximum permissions of every principal in the account, so no allow can override it.',
+    eliminate: { 1: 'Identity policies never override an explicit deny.', 2: 'An allow in a bucket policy cannot override a deny either.', 3: 'SCPs apply to all users and roles in member accounts, including the member account root user.' },
+    trigger: 'Explicit deny anywhere beats every allow.',
   },
   {
-    id: 'D19', type: 'tf', concept: 'multiaz', domain: 'resilient', options: TF, answer: 1,
-    scenario: 'True or false: In an Amazon RDS Multi-AZ DB instance deployment, the standby instance can serve read-only queries to offload reporting traffic.',
-    proof: 'False. The Multi-AZ DB instance standby exists only for synchronous replication and automatic failover. To offload reads, add read replicas (or use a Multi-AZ DB cluster, whose two standbys are readable).',
-    trigger: 'Multi-AZ = availability · read replicas = read scaling.',
+    id: 'D19', concept: 'multiaz', domain: 'performance',
+    scenario: 'Heavy reporting queries are slowing down an Amazon RDS for MySQL Multi-AZ DB instance that serves an online store. Which change offloads the reporting queries with the least impact on the store?',
+    options: [
+      'Create a read replica and point the reporting tool at the replica endpoint.',
+      'Point the reporting tool at the Multi-AZ standby instance.',
+      'Increase the backup retention period.',
+      'Enable Performance Insights on the primary.',
+    ],
+    answer: 0,
+    proof: 'A read replica receives asynchronous updates and serves read-only traffic, taking the reporting load off the primary.',
+    eliminate: { 1: 'The standby of a Multi-AZ DB instance cannot serve reads; it exists only for failover.', 2: 'Backup retention has no effect on query load.', 3: 'Performance Insights diagnoses load; it does not remove it.' },
+    trigger: 'Offload reads → read replica. Multi-AZ = availability only.',
   },
   {
     id: 'D20', type: 'multi', concept: 'dynamodb', domain: 'performance',
@@ -1314,6 +1380,288 @@ DIAGNOSTIC.push(
     proof: 'DAX serves the hot items from memory, so they barely touch the table. On-demand (or auto scaling) raises table throughput automatically when the sale starts.',
     eliminate: { 2: 'One relational instance scales worse than DynamoDB for this access pattern.', 3: 'Streams capture item changes; they do nothing for reads.', 4: 'PITR is a backup feature.' },
     trigger: 'Hot reads → DAX · spiky throughput → on-demand.',
+  },
+
+  /* ---------- Form B (D21-D40): used on the next attempt ---------- */
+  {
+    id: 'D21', concept: 'asg', domain: 'resilient',
+    scenario: 'Instances in an Auto Scaling group behind an Application Load Balancer return HTTP 500 errors and are marked unhealthy by the ALB, but the Auto Scaling group never replaces them. What should be changed?',
+    options: [
+      'Set the Auto Scaling group health check type to ELB so it uses the load balancer\'s health checks.',
+      'Enable detailed CloudWatch monitoring on the instances.',
+      'Add a second Application Load Balancer.',
+      'Move the instances into a cluster placement group.',
+    ],
+    answer: 0,
+    proof: 'With the default EC2 health check, the group only sees instance status checks, which still pass. ELB health checks make the group replace instances the load balancer considers unhealthy.',
+    eliminate: { 1: 'Detailed monitoring only changes metric resolution.', 2: 'Another load balancer does not change how the group judges health.', 3: 'Placement groups affect network topology, not health replacement.' },
+    trigger: 'ALB says unhealthy but ASG keeps them → health check type ELB.',
+  },
+  {
+    id: 'D22', concept: 'ec2-core', domain: 'performance',
+    scenario: 'A tightly coupled HPC simulation runs on 20 EC2 instances that exchange data constantly and need the lowest possible network latency between nodes. How should the instances be launched?',
+    options: [
+      'In a cluster placement group in a single Availability Zone.',
+      'In a spread placement group across three Availability Zones.',
+      'In a partition placement group across Availability Zones.',
+      'On Dedicated Hosts in different Availability Zones.',
+    ],
+    answer: 0,
+    proof: 'A cluster placement group packs instances close together in one AZ on a high-bisection-bandwidth network, giving the lowest latency and highest throughput between them.',
+    eliminate: { 1: 'Spread groups maximise separation for resilience, at the cost of latency.', 2: 'Partition groups isolate failure domains for large distributed systems such as HDFS.', 3: 'Dedicated Hosts are about licensing and tenancy, and multiple AZs add latency.' },
+    trigger: 'Lowest latency between nodes → cluster placement group.',
+  },
+  {
+    id: 'D23', type: 'multi', concept: 'circuit', domain: 'resilient',
+    scenario: 'Microservices on Amazon ECS call a payment service. When the payment service slows down, upstream requests pile up and the whole application stops responding. Which TWO changes reduce this cascading failure? (Choose TWO.)',
+    options: [
+      'Set short timeouts and retry with exponential back-off and jitter, up to a limit.',
+      'Add a circuit breaker that fails fast while the payment service\'s error rate is high.',
+      'Increase the caller\'s thread pool size without limit.',
+      'Retry failed calls immediately and indefinitely.',
+      'Move every service to larger instance types.',
+    ],
+    answer: [0, 1],
+    proof: 'Timeouts with bounded, jittered retries stop callers from waiting forever. A circuit breaker stops sending traffic to a failing dependency, so the failure stays contained.',
+    eliminate: { 2: 'Unbounded threads just exhaust memory faster.', 3: 'Immediate infinite retries amplify the overload (a retry storm).', 4: 'Bigger instances do not fix a slow dependency.' },
+    trigger: 'Cascading failure → timeouts + back-off + circuit breaker.',
+  },
+  {
+    id: 'D24', concept: 'sqs', domain: 'resilient',
+    scenario: 'Workers take about 2 minutes to process each message from an SQS standard queue that uses the default 30-second visibility timeout. Some orders are being processed twice. What is the BEST fix?',
+    options: [
+      'Increase the queue\'s visibility timeout to longer than the processing time.',
+      'Enable long polling on the queue.',
+      'Replace the queue with an SNS topic.',
+      'Reduce the message retention period.',
+    ],
+    answer: 0,
+    proof: 'The message becomes visible again after 30 seconds while the first worker is still processing it, so a second worker picks it up. A visibility timeout longer than the processing time prevents this. Consumers should still be idempotent.',
+    eliminate: { 1: 'Long polling reduces empty receives; it does not change visibility.', 2: 'SNS pushes messages and has no queueing semantics for workers.', 3: 'Retention controls how long unprocessed messages are kept.' },
+    trigger: 'Duplicate processing + long jobs → visibility timeout > processing time.',
+  },
+  {
+    id: 'D25', concept: 'fanout', domain: 'resilient',
+    scenario: 'When an order is placed, three independent services (billing, shipping and analytics) must each receive the event and process it at their own pace, with their own retries. Which design meets this?',
+    options: [
+      'Publish to an SNS topic and subscribe a separate SQS queue for each service.',
+      'Send the event to one SQS queue that all three services poll.',
+      'Have the order service call the three services synchronously one after another.',
+      'Write the event to an S3 bucket and have each service list the bucket every minute.',
+    ],
+    answer: 0,
+    proof: 'SNS fan-out gives every subscriber its own copy of the message, and each SQS queue buffers and retries independently.',
+    eliminate: { 1: 'Consumers of one queue compete: each message goes to only one service.', 2: 'Synchronous calls couple all services to the slowest one.', 3: 'Polling S3 is slow, costly and has no retry semantics.' },
+    trigger: 'One event, many independent consumers → SNS → SQS per consumer.',
+  },
+  {
+    id: 'D26', type: 'multi', concept: 'sqs', domain: 'resilient',
+    scenario: 'An order system must process each customer\'s orders exactly once and in order. Malformed messages must not block the queue forever. Which TWO features should be used? (Choose TWO.)',
+    options: [
+      'An SQS FIFO queue with the customer ID as the message group ID.',
+      'A dead-letter queue with a redrive policy (maxReceiveCount).',
+      'An SQS standard queue with long polling.',
+      'An SNS standard topic with email subscriptions.',
+      'A 14-day message retention period.',
+    ],
+    answer: [0, 1],
+    proof: 'FIFO queues give exactly-once processing and ordering within each message group. A dead-letter queue moves messages that keep failing out of the way, so the group can continue.',
+    eliminate: { 2: 'Standard queues are at-least-once with best-effort ordering.', 3: 'SNS standard topics do not order or deduplicate, and email processes nothing.', 4: 'Longer retention keeps poison messages around longer.' },
+    trigger: 'Ordered + exactly-once → FIFO · poison messages → DLQ.',
+  },
+  {
+    id: 'D27', concept: 'storage', domain: 'performance',
+    scenario: 'Linux web servers in an Auto Scaling group across three Availability Zones need a shared POSIX file system for user uploads that grows and shrinks automatically. Which service should be used?',
+    options: ['Amazon EFS', 'Amazon EBS with Multi-Attach', 'Amazon S3 mounted as a local disk', 'EC2 instance store volumes'],
+    answer: 0,
+    proof: 'EFS is a managed, elastic NFS file system that many Linux instances in multiple AZs can mount at the same time.',
+    eliminate: { 1: 'Multi-Attach works only within one AZ and needs a cluster-aware file system.', 2: 'S3 is object storage, not a POSIX file system.', 3: 'Instance store is local to one instance and lost when it stops.' },
+    trigger: 'Shared Linux files across AZs → EFS.',
+  },
+  {
+    id: 'D28', concept: 'fsr', domain: 'performance',
+    scenario: 'EBS volumes restored from snapshots show high latency the first time each block is read, which slows down new instances. The volumes must deliver full performance immediately after creation. What should be enabled?',
+    options: [
+      'EBS Fast Snapshot Restore on the snapshots in the required Availability Zones.',
+      'Provisioned IOPS (io2) on the new volumes.',
+      'A RAID 0 array across several volumes.',
+      'Amazon Data Lifecycle Manager for the snapshots.',
+    ],
+    answer: 0,
+    proof: 'Volumes created from snapshots load blocks lazily from S3. Fast Snapshot Restore pre-initialises them, so they deliver full performance from the start.',
+    eliminate: { 1: 'More IOPS does not avoid the first-read penalty.', 2: 'RAID 0 adds throughput, not initialisation.', 3: 'DLM automates snapshot creation and retention.' },
+    trigger: 'Full performance right after restore → Fast Snapshot Restore.',
+  },
+  {
+    id: 'D29', concept: 's3-core', domain: 'resilient',
+    scenario: 'Every new object in an S3 bucket in us-east-1 must be copied automatically to a bucket in eu-west-1 for disaster recovery. What must be in place before the replication rule can be created?',
+    options: [
+      'Versioning enabled on both the source and destination buckets.',
+      'S3 Transfer Acceleration enabled on the source bucket.',
+      'Default SSE-S3 encryption configured on both buckets.',
+      'A public bucket policy on the destination bucket.',
+    ],
+    answer: 0,
+    proof: 'S3 replication (Cross-Region or Same-Region) requires versioning on both buckets, plus an IAM role that S3 assumes to replicate.',
+    eliminate: { 1: 'Transfer Acceleration speeds client uploads only.', 2: 'Encryption is optional for replication; it is not a prerequisite.', 3: 'Replication never needs public access.' },
+    trigger: 'Cross-Region Replication → versioning on both buckets.',
+  },
+  {
+    id: 'D30', concept: 'storage', domain: 'cost',
+    scenario: 'A company\'s backup software writes to a physical tape library in its data centre. It wants to replace the tapes with durable, low-cost cloud storage without changing the backup software. Which service should it use?',
+    options: [
+      'AWS Storage Gateway Tape Gateway',
+      'AWS Storage Gateway File Gateway',
+      'Amazon EFS',
+      'Amazon EBS snapshots',
+    ],
+    answer: 0,
+    proof: 'Tape Gateway presents a virtual tape library over iSCSI, so existing backup software works unchanged while tapes are stored in S3 and archived to Glacier tiers.',
+    eliminate: { 1: 'File Gateway presents file shares (NFS/SMB), not tapes.', 2: 'EFS is a file system for AWS compute.', 3: 'EBS snapshots back up EBS volumes, not on-premises tape jobs.' },
+    trigger: 'Replace physical tapes, keep the backup software → Tape Gateway.',
+  },
+  {
+    id: 'D31', concept: 'sg-nacl', domain: 'secure',
+    scenario: 'A custom network ACL on a public subnet allows inbound HTTPS (port 443) from 0.0.0.0/0, but users cannot load the website. The security groups are correct. What is the MOST likely fix?',
+    options: [
+      'Add an outbound NACL rule allowing ephemeral ports 1024-65535 to 0.0.0.0/0.',
+      'Add an outbound security group rule for port 443.',
+      'Attach a second internet gateway.',
+      'Add an inbound NACL rule for port 80.',
+    ],
+    answer: 0,
+    proof: 'NACLs are stateless, so return traffic needs its own outbound rule. Responses go back to the client\'s ephemeral port, which must be allowed outbound.',
+    eliminate: { 1: 'Security groups are stateful; responses to allowed inbound traffic are allowed automatically.', 2: 'A VPC can have only one internet gateway.', 3: 'The site uses HTTPS; port 80 does not fix the missing return path.' },
+    trigger: 'NACL + "requests arrive but responses fail" → outbound ephemeral ports.',
+  },
+  {
+    id: 'D32', concept: 'vpce', domain: 'secure',
+    scenario: 'Lambda functions in private subnets with no internet access must read secrets from AWS Secrets Manager. Traffic must stay on the AWS network. What should be created?',
+    options: [
+      'An interface VPC endpoint (AWS PrivateLink) for Secrets Manager.',
+      'A gateway VPC endpoint for Secrets Manager.',
+      'An internet gateway route in the private subnets.',
+      'A VPC peering connection to the Secrets Manager VPC.',
+    ],
+    answer: 0,
+    proof: 'Interface endpoints place ENIs for the service inside your subnets, so private resources reach the Secrets Manager API without internet access.',
+    eliminate: { 1: 'Gateway endpoints exist only for S3 and DynamoDB.', 2: 'That would make the subnets public.', 3: 'AWS services are not reached by peering.' },
+    trigger: 'Private access to most AWS APIs → interface endpoint (gateway only for S3/DynamoDB).',
+  },
+  {
+    id: 'D33', type: 'multi', concept: 'nat', domain: 'resilient',
+    scenario: 'Private subnets in three Availability Zones need highly available outbound internet access for software updates. Which TWO steps achieve this? (Choose TWO.)',
+    options: [
+      'Create a NAT gateway in a public subnet in each Availability Zone.',
+      'Point each private subnet\'s route table at the NAT gateway in the same Availability Zone.',
+      'Create one NAT gateway in a private subnet.',
+      'Attach two Elastic IP addresses to a single NAT gateway.',
+      'Route the private subnets\' 0.0.0.0/0 traffic to the internet gateway.',
+    ],
+    answer: [0, 1],
+    proof: 'A NAT gateway is zonal. One per AZ with AZ-local routes means an AZ failure only affects that AZ, and avoids cross-AZ data charges.',
+    eliminate: { 2: 'NAT gateways must sit in public subnets, and one is a single point of failure.', 3: 'Extra addresses do not make a zonal resource multi-AZ.', 4: 'That would make the subnets public.' },
+    trigger: 'HA NAT → one per AZ + AZ-local route tables.',
+  },
+  {
+    id: 'D34', concept: 'vpc-core', domain: 'performance',
+    scenario: 'VPC A is peered with VPC B, and VPC B is peered with VPC C. Instances in VPC A cannot reach VPC C. Why, and what is a valid fix?',
+    options: [
+      'Peering is not transitive. Create a peering connection between A and C (or connect all three to a Transit Gateway).',
+      'Peering needs an internet gateway in VPC B to forward traffic.',
+      'Security groups cannot reference peered VPCs, so all three VPCs must be merged.',
+      'Peering only works within one account; move VPC C into the same account.',
+    ],
+    answer: 0,
+    proof: 'A peering connection links exactly two VPCs and never forwards traffic onward. Use a direct peering connection or a Transit Gateway hub.',
+    eliminate: { 1: 'Traffic between peered VPCs never uses an internet gateway.', 2: 'Security groups can reference groups in peered VPCs in the same Region.', 3: 'Peering works across accounts and Regions.' },
+    trigger: 'A↔B↔C but not A↔C → peering is not transitive.',
+  },
+  {
+    id: 'D35', concept: 'waf', domain: 'secure',
+    scenario: 'A company must block all requests from a specific country to its application behind an Application Load Balancer. Which solution meets this with the least effort?',
+    options: [
+      'An AWS WAF web ACL with a geographic match rule associated with the ALB.',
+      'Network ACL rules for every IP range in that country.',
+      'Security group deny rules for that country.',
+      'Route 53 geolocation routing.',
+    ],
+    answer: 0,
+    proof: 'AWS WAF geo match rules use the request\'s source country and block it at the load balancer, with no IP lists to maintain.',
+    eliminate: { 1: 'Countries have thousands of ranges, NACLs allow only a few rules, and IP ranges change.', 2: 'Security groups cannot deny.', 3: 'Geolocation routing chooses DNS answers; it does not block anyone.' },
+    trigger: 'Block by country → WAF geo match (or CloudFront geo restriction).',
+  },
+  {
+    id: 'D36', concept: 'identity', domain: 'secure',
+    scenario: 'Employees already sign in through an external SAML 2.0 identity provider (such as Okta). They need single sign-on to 15 AWS accounts with centrally managed permissions. What should be used?',
+    options: [
+      'AWS IAM Identity Center with the external identity provider and permission sets.',
+      'An IAM user per employee in every account.',
+      'Amazon Cognito user pools.',
+      'One shared IAM user per team.',
+    ],
+    answer: 0,
+    proof: 'IAM Identity Center federates the existing IdP and assigns permission sets to groups across all accounts in AWS Organizations.',
+    eliminate: { 1: 'Hundreds of duplicated users is unmanageable and insecure.', 2: 'Cognito is for customers of your applications, not the workforce.', 3: 'Shared users destroy accountability.' },
+    trigger: 'Workforce SSO to many accounts → IAM Identity Center.',
+  },
+  {
+    id: 'D37', type: 'multi', concept: 'iam-core', domain: 'secure',
+    scenario: 'An external auditing firm needs read-only access to one AWS account for 30 days. Which TWO steps provide this MOST securely? (Choose TWO.)',
+    options: [
+      'Create an IAM role with a read-only audit policy that trusts the auditor\'s AWS account.',
+      'Require an external ID in the role\'s trust policy.',
+      'Create an IAM user and email its access keys to the auditor.',
+      'Share the root user credentials protected by MFA.',
+      'Attach AdministratorAccess so the auditor can see everything.',
+    ],
+    answer: [0, 1],
+    proof: 'Cross-account role assumption gives temporary credentials, and the external ID protects against the confused-deputy problem. Delete the role when the 30 days are up.',
+    eliminate: { 2: 'Long-term keys sent by email can leak and outlive the engagement.', 3: 'Root credentials must never be shared.', 4: 'Administrator access violates least privilege.' },
+    trigger: 'Third-party cross-account access → role + external ID.',
+  },
+  {
+    id: 'D38', concept: 'dynamodb', domain: 'cost',
+    scenario: 'A DynamoDB table stores user sessions that should be deleted 24 hours after creation, with no extra code and no extra write cost. What should be used?',
+    options: [
+      'DynamoDB Time to Live (TTL) on an expiry timestamp attribute.',
+      'A Lambda function on a schedule that scans and deletes old items.',
+      'DynamoDB Streams with a deletion consumer.',
+      'Point-in-time recovery.',
+    ],
+    answer: 0,
+    proof: 'TTL deletes expired items automatically in the background, and TTL deletions do not consume write capacity.',
+    eliminate: { 1: 'Scans and deletes cost capacity and require code.', 2: 'Streams react to changes; they do not expire items.', 3: 'PITR is a backup feature.' },
+    trigger: 'Expire items automatically → DynamoDB TTL.',
+  },
+  {
+    id: 'D39', concept: 'aurora-global', domain: 'cost',
+    scenario: 'A new MySQL-compatible application has unpredictable, spiky traffic and long idle periods. The team wants the database capacity to scale automatically with minimal administration. Which option fits BEST?',
+    options: [
+      'Amazon Aurora Serverless v2',
+      'Amazon RDS for MySQL on the largest instance class',
+      'MySQL installed on EC2 in an Auto Scaling group',
+      'Amazon Redshift',
+    ],
+    answer: 0,
+    proof: 'Aurora Serverless v2 adjusts capacity in fine-grained increments as load changes, so the database follows spikes without manual resizing.',
+    eliminate: { 1: 'Sizing for the peak wastes money while idle.', 2: 'Self-managed databases on EC2 cannot be scaled this way and need heavy administration.', 3: 'Redshift is a data warehouse, not a transactional MySQL database.' },
+    trigger: 'Relational + unpredictable/intermittent + auto-scaling capacity → Aurora Serverless v2.',
+  },
+  {
+    id: 'D40', type: 'multi', concept: 'multiaz', domain: 'resilient',
+    scenario: 'An Amazon RDS for PostgreSQL database must fail over automatically if its Availability Zone fails, and must also handle growing read traffic. Which TWO changes meet both requirements? (Choose TWO.)',
+    options: [
+      'Enable a Multi-AZ deployment.',
+      'Add read replicas and send read traffic to them.',
+      'Move to a larger instance class only.',
+      'Increase the automated backup retention period.',
+      'Send read traffic to the Multi-AZ standby instance.',
+    ],
+    answer: [0, 1],
+    proof: 'Multi-AZ provides automatic failover; read replicas scale reads. Each feature solves one requirement.',
+    eliminate: { 2: 'A bigger instance is still a single point of failure.', 3: 'Backups help recovery, not automatic failover or reads.', 4: 'The standby of a Multi-AZ DB instance cannot serve reads.' },
+    trigger: 'Availability → Multi-AZ · read scaling → read replicas.',
   },
 );
 
@@ -1694,6 +2042,565 @@ const PRACTICE_SETS = [
       trigger: 'Repeated reads → cache + read replicas.' },
   ] },
 ];
+/* =====================================================================
+   3d. EXAM-LENGTH EXPANSION — 15 more scenarios per set (25 per set)
+   ===================================================================== */
+const PRACTICE_EXTRA = {
+  1: [
+    { id: 'P1-11', concept: 'ga-cf', domain: 'resilient',
+      scenario: 'A company hosts its website on EC2 behind an ALB in us-east-1 and keeps a static "maintenance" version in an S3 bucket in us-west-2. If the primary site becomes unhealthy, users must automatically see the static site. What should be configured?',
+      options: ['Route 53 failover routing: primary record for the ALB with a health check, secondary record for the S3 website.', 'Route 53 weighted routing with 50% to each endpoint.', 'An ALB listener rule that redirects to S3 when targets are unhealthy.', 'CloudFront with the S3 bucket as the only origin.'],
+      answer: 0, proof: 'Failover routing answers with the primary record while its health check passes and switches to the secondary record when it fails. This is the classic active-passive DR pattern.',
+      eliminate: { 1: 'Weighted routing sends half the users to the maintenance page even when the site is healthy.', 2: 'An ALB in a failed Region cannot redirect anything.', 3: 'This would serve only the static site, all the time.' },
+      trigger: 'Active-passive + automatic DNS switch → Route 53 failover routing + health check.' },
+    { id: 'P1-12', concept: 'asg', domain: 'resilient',
+      scenario: 'A Network Load Balancer has targets in two Availability Zones: 2 instances in AZ-a and 8 in AZ-b. The two instances in AZ-a are overloaded while AZ-b is mostly idle. What is the simplest fix?',
+      options: ['Enable cross-zone load balancing on the NLB.', 'Add a second NLB in AZ-a.', 'Enable sticky sessions on the target group.', 'Switch the instances to a larger instance type.'],
+      answer: 0, proof: 'Without cross-zone load balancing, each NLB node sends traffic only to targets in its own AZ, so each AZ gets 50% of traffic regardless of target count. Cross-zone spreads traffic evenly across all registered targets.',
+      eliminate: { 1: 'More load balancers do not change per-AZ distribution.', 2: 'Stickiness pins clients and makes imbalance worse.', 3: 'Bigger instances treat the symptom; the distribution is still uneven.' },
+      trigger: 'Uneven load across AZs on an NLB → cross-zone load balancing.' },
+    { id: 'P1-13', concept: 'sqs', domain: 'resilient',
+      scenario: 'Worker instances in an Auto Scaling group process jobs from an SQS queue. The backlog sometimes grows for hours before the group reacts. Which scaling approach keeps the backlog under control MOST effectively?',
+      options: ['Target tracking on a custom metric: queue backlog per instance (visible messages ÷ running instances).', 'Target tracking on average CPU at 70%.', 'Scheduled scaling at 9 AM every day.', 'A simple scaling policy on the number of messages deleted.'],
+      answer: 0, proof: 'Backlog per instance expresses how much work each worker faces. Tracking an acceptable value adds instances in proportion to the queue, regardless of CPU.',
+      eliminate: { 1: 'Workers waiting on I/O can have low CPU while the queue grows.', 2: 'Schedules ignore actual demand.', 3: 'Messages deleted measures throughput, not the waiting backlog.' },
+      trigger: 'Scale SQS consumers → backlog per instance.' },
+    { id: 'P1-14', concept: 'aurora-global', domain: 'resilient',
+      scenario: 'An Aurora MySQL cluster has only a writer instance. The business needs the fastest possible automatic recovery within the Region if the writer\'s instance or AZ fails. What should be added?',
+      options: ['An Aurora Replica in a different Availability Zone, which Aurora promotes automatically on failure.', 'A cross-Region read replica.', 'Hourly manual snapshots.', 'A larger writer instance.'],
+      answer: 0, proof: 'Aurora fails over to a replica (by promotion tier) in about 30 seconds, using the same shared storage volume, and the cluster endpoint follows the new writer.',
+      eliminate: { 1: 'Cross-Region replicas are for Regional DR and need manual promotion.', 2: 'Restoring from a snapshot takes much longer and loses recent data.', 3: 'A single instance is still a single point of failure.' },
+      trigger: 'Fast in-Region Aurora failover → Aurora Replica in another AZ.' },
+    { id: 'P1-15', concept: 'dynamodb', domain: 'resilient',
+      scenario: 'A gaming company has players in North America and Europe who must read and write their profiles with low latency, and the data must survive a Regional outage. Which solution fits?',
+      options: ['DynamoDB global tables with replicas in a US Region and an EU Region.', 'A single DynamoDB table in us-east-1 with DAX.', 'RDS for MySQL with a cross-Region read replica.', 'S3 Cross-Region Replication of JSON profile files.'],
+      answer: 0, proof: 'Global tables are multi-active: each Region accepts local reads and writes and replicates to the others, typically within a second.',
+      eliminate: { 1: 'One Region gives EU players high latency and no Regional failover.', 2: 'Read replicas cannot accept writes in the second Region.', 3: 'S3 is not a low-latency read/write database.' },
+      trigger: 'Multi-Region active-active key-value data → DynamoDB global tables.' },
+    { id: 'P1-16', concept: 'storage', domain: 'resilient',
+      scenario: 'A WordPress site runs on EC2 instances in an Auto Scaling group across two Availability Zones. Uploaded media saved on one instance is missing on the others. What is the BEST storage solution for the uploads?',
+      options: ['Amazon EFS mounted on every instance.', 'An EBS volume per instance with nightly rsync.', 'EC2 instance store.', 'One EBS volume with Multi-Attach across both AZs.'],
+      answer: 0, proof: 'EFS is a shared, multi-AZ NFS file system, so every instance sees the same uploads immediately and the data survives an AZ failure.',
+      eliminate: { 1: 'Syncing is delayed, fragile and inconsistent.', 2: 'Instance store is ephemeral and per instance.', 3: 'Multi-Attach volumes cannot span AZs.' },
+      trigger: 'Shared files across instances in multiple AZs → EFS.' },
+    { id: 'P1-17', concept: 'aurora-global', domain: 'resilient',
+      scenario: 'A company needs DR in a second Region with an RTO of tens of minutes. The core database must be replicated continuously, but application servers should not run in the DR Region until a disaster, to save cost. Which strategy is this?',
+      options: ['Pilot light', 'Backup and restore', 'Warm standby', 'Multi-site active-active'],
+      answer: 0, proof: 'Pilot light keeps the critical core (data replication) always on, and the rest of the stack is provisioned, often from infrastructure as code, only during recovery.',
+      eliminate: { 1: 'Backup and restore has no live replication and an RTO of hours.', 2: 'Warm standby runs a scaled-down but complete stack all the time.', 3: 'Active-active runs full capacity in both Regions.' },
+      trigger: 'Data always replicating, compute off until needed → pilot light.' },
+    { id: 'P1-18', concept: 'sqs', domain: 'resilient',
+      scenario: 'Uploads to an S3 bucket trigger a Lambda function directly. During traffic bursts some invocations are throttled and those files are never processed. How can the design guarantee every upload is processed?',
+      options: ['Send S3 event notifications to an SQS queue, have Lambda poll the queue, and configure a dead-letter queue.', 'Increase the Lambda timeout to 15 minutes.', 'Enable S3 versioning.', 'Replace Lambda with a single larger EC2 instance.'],
+      answer: 0, proof: 'The queue durably buffers every event, Lambda scales its pollers with the backlog, failed messages are retried, and messages that keep failing land in the DLQ for investigation.',
+      eliminate: { 1: 'Timeout does not address throttling or lost events.', 2: 'Versioning keeps object versions; it does not retry processing.', 3: 'One instance is a single point of failure and does not scale with bursts.' },
+      trigger: 'Never lose events under bursts → put SQS in between.' },
+    { id: 'P1-19', type: 'multi', concept: 'asg', domain: 'resilient',
+      scenario: 'A stateless web tier currently runs on a single EC2 instance. Which TWO changes make it highly available across Availability Zones? (Choose TWO.)',
+      options: ['Place an Application Load Balancer in front, enabled in at least two AZs.', 'Run the instances in an Auto Scaling group spread across at least two AZs.', 'Replace the instance with a larger instance type.', 'Attach an Elastic IP and move it with a script on failure.', 'Launch the instances in a cluster placement group.'],
+      answer: [0, 1], proof: 'The ALB routes only to healthy targets in any enabled AZ, and the Auto Scaling group replaces failed instances and keeps capacity in each AZ.',
+      eliminate: { 2: 'A bigger single instance is still a single point of failure.', 3: 'Scripted Elastic IP failover is slow and fragile.', 4: 'Cluster placement groups put everything in one AZ.' },
+      trigger: 'HA web tier → ALB + multi-AZ Auto Scaling group.' },
+    { id: 'P1-20', concept: 'fsr', domain: 'resilient',
+      scenario: 'An operations team must create daily snapshots of every EBS volume tagged Backup=true and keep them for 30 days, with no custom scripts. What should they use?',
+      options: ['Amazon Data Lifecycle Manager (or AWS Backup) with a tag-based policy.', 'A cron job on each instance that calls the AWS CLI.', 'S3 lifecycle rules.', 'EBS Multi-Attach.'],
+      answer: 0, proof: 'Data Lifecycle Manager and AWS Backup create and expire snapshots on a schedule for resources selected by tags, fully managed.',
+      eliminate: { 1: 'Scripts on instances need maintenance and fail with the instance.', 2: 'S3 lifecycle rules do not manage EBS snapshots.', 3: 'Multi-Attach is not a backup feature.' },
+      trigger: 'Scheduled snapshots + retention, no scripts → DLM / AWS Backup.' },
+    { id: 'P1-21', concept: 'multiaz', domain: 'resilient',
+      scenario: 'An RDS for MySQL database needs a cost-effective disaster recovery copy in another Region with an RPO of minutes. In a disaster the copy must become the writable database. What should be done?',
+      options: ['Create a cross-Region read replica and promote it during a disaster.', 'Enable Multi-AZ.', 'Take a daily manual snapshot.', 'Use S3 Cross-Region Replication on exported dumps.'],
+      answer: 0, proof: 'A cross-Region read replica receives asynchronous replication with a lag of seconds to minutes, and can be promoted to a standalone writable instance.',
+      eliminate: { 1: 'Multi-AZ stays within one Region.', 2: 'Daily snapshots mean up to 24 hours of data loss.', 3: 'Exported dumps are slow to restore and have a large RPO.' },
+      trigger: 'Cross-Region DR for RDS with low RPO → cross-Region read replica + promote.' },
+    { id: 'P1-22', concept: 'fanout', domain: 'resilient',
+      scenario: 'An order workflow calls five Lambda functions in sequence with branching, retries on specific errors, and a compensation step if payment fails. The team wants a visual, managed way to coordinate it. What should they use?',
+      options: ['AWS Step Functions', 'Amazon SQS', 'Amazon SNS', 'An EC2 instance running a cron job'],
+      answer: 0, proof: 'Step Functions state machines model sequences, branches, retries with back-off, catch blocks and compensation, with visual execution history.',
+      eliminate: { 1: 'Queues decouple steps but do not orchestrate a workflow.', 2: 'SNS fans out notifications; it has no workflow state.', 3: 'A cron job means custom orchestration code and a single point of failure.' },
+      trigger: 'Orchestrate multi-step serverless workflows → Step Functions.' },
+    { id: 'P1-23', type: 'multi', concept: 'dynamodb', domain: 'resilient',
+      scenario: 'A critical DynamoDB table was nearly lost when an engineer ran a delete command in the wrong account. Which TWO features protect against this in future? (Choose TWO.)',
+      options: ['Enable deletion protection on the table.', 'Enable point-in-time recovery (or scheduled AWS Backup backups).', 'Add DynamoDB Accelerator (DAX).', 'Switch the table to on-demand capacity.', 'Enable DynamoDB Streams.'],
+      answer: [0, 1], proof: 'Deletion protection blocks DeleteTable until it is turned off. PITR or backups make the data recoverable if it is deleted or corrupted anyway.',
+      eliminate: { 2: 'DAX is a cache.', 3: 'Capacity mode has nothing to do with protection.', 4: 'Streams record item changes, not table backups.' },
+      trigger: 'Prevent + recover from accidental deletion → deletion protection + PITR/backups.' },
+    { id: 'P1-24', concept: 'circuit', domain: 'resilient',
+      scenario: 'A burst of traffic to a non-critical image-resizing Lambda function uses all of the account\'s concurrency, and the critical payment function starts getting throttled. How should this be prevented?',
+      options: ['Configure reserved concurrency for the payment function (and cap the resizing function).', 'Increase the payment function\'s memory.', 'Increase the payment function\'s timeout.', 'Move the payment function to another Region.'],
+      answer: 0, proof: 'Reserved concurrency guarantees capacity for a function and also limits it. Reserving for payments and capping resizing isolates them from each other.',
+      eliminate: { 1: 'Memory affects speed, not access to concurrency.', 2: 'A longer timeout makes concurrency pressure worse.', 3: 'Moving Regions is disruptive and does not fix the design.' },
+      trigger: 'Protect a critical Lambda from noisy neighbours → reserved concurrency.' },
+    { id: 'P1-25', concept: 'asg', domain: 'resilient',
+      scenario: 'New instances behind an ALB need several minutes to warm their caches, and they are overwhelmed when they receive a full share of traffic immediately. What should be configured on the target group?',
+      options: ['Slow start mode, so new targets receive a linearly increasing share of requests.', 'Sticky sessions.', 'A longer deregistration delay.', 'Cross-zone load balancing turned off.'],
+      answer: 0, proof: 'Slow start gradually ramps up the share of requests sent to newly registered targets over the configured duration.',
+      eliminate: { 1: 'Stickiness affects returning clients, not new targets.', 2: 'Deregistration delay drains targets that are being removed.', 3: 'Turning off cross-zone balancing does not ramp up new targets.' },
+      trigger: 'New targets need warm-up → ALB slow start.' },
+  ],
+  2: [
+    { id: 'P2-11', concept: 'iam-core', domain: 'secure',
+      scenario: 'An EBS snapshot encrypted with the default aws/ebs KMS key must be shared with a partner\'s AWS account. Sharing fails. What should be done?',
+      options: ['Copy the snapshot, re-encrypting it with a customer managed key; allow the partner account in that key\'s policy and share the copy.', 'Make the snapshot public.', 'Disable encryption on the snapshot, then share it.', 'Grant the partner access to the aws/ebs key.'],
+      answer: 0, proof: 'Snapshots encrypted with AWS managed keys cannot be shared, because those key policies cannot be changed. A customer managed key can grant the partner kms:Decrypt and CreateGrant.',
+      eliminate: { 1: 'Encrypted snapshots cannot be made public, and that would leak data.', 2: 'Encryption cannot be removed from an encrypted snapshot.', 3: 'AWS managed key policies cannot be edited.' },
+      trigger: 'Share encrypted snapshots cross-account → customer managed KMS key.' },
+    { id: 'P2-12', concept: 's3-core', domain: 'secure',
+      scenario: 'Security requires that all access to an S3 bucket uses encrypted connections (HTTPS). Which control enforces this?',
+      options: ['A bucket policy that denies all actions when aws:SecureTransport is false.', 'Default SSE-S3 encryption.', 'S3 Object Lock.', 'Enabling S3 Transfer Acceleration.'],
+      answer: 0, proof: 'The aws:SecureTransport condition key is false for plain HTTP requests, so an explicit deny on that condition blocks any unencrypted access.',
+      eliminate: { 1: 'SSE-S3 encrypts data at rest, not in transit.', 2: 'Object Lock prevents deletion.', 3: 'Transfer Acceleration is about upload speed.' },
+      trigger: 'Enforce HTTPS to S3 → deny aws:SecureTransport = false.' },
+    { id: 'P2-13', concept: 'sg-nacl', domain: 'secure',
+      scenario: 'The security team needs to investigate which source IPs were rejected when trying to reach instances in a VPC over the past week. What should have been enabled?',
+      options: ['VPC Flow Logs', 'AWS CloudTrail data events', 'Amazon Inspector', 'AWS Config'],
+      answer: 0, proof: 'VPC Flow Logs record metadata (source, destination, ports, ACCEPT/REJECT) for traffic through ENIs, subnets or the whole VPC.',
+      eliminate: { 1: 'CloudTrail records API calls, not network packets.', 2: 'Inspector finds vulnerabilities.', 3: 'Config records resource configuration changes.' },
+      trigger: 'Who tried to connect / what was rejected → VPC Flow Logs.' },
+    { id: 'P2-14', concept: 'iam-core', domain: 'secure',
+      scenario: 'A company wants intelligent, continuous threat detection, such as EC2 instances mining cryptocurrency or credentials used from unusual locations, without installing agents. Which service should it enable?',
+      options: ['Amazon GuardDuty', 'Amazon Inspector', 'Amazon Macie', 'AWS Shield Standard'],
+      answer: 0, proof: 'GuardDuty analyses CloudTrail, VPC Flow Logs and DNS logs with threat intelligence and machine learning, producing findings such as CryptoCurrency:EC2/BitcoinTool.',
+      eliminate: { 1: 'Inspector scans for software vulnerabilities and exposure.', 2: 'Macie discovers sensitive data in S3.', 3: 'Shield protects against DDoS.' },
+      trigger: 'Threat detection from logs, no agents → GuardDuty.' },
+    { id: 'P2-15', concept: 'waf', domain: 'secure',
+      scenario: 'A public-facing application behind CloudFront and ALB is a frequent DDoS target. The company wants 24/7 access to AWS DDoS response experts and protection against scaling charges caused by attacks. What should it subscribe to?',
+      options: ['AWS Shield Advanced', 'AWS Shield Standard', 'Amazon GuardDuty', 'AWS Firewall Manager only'],
+      answer: 0, proof: 'Shield Advanced adds enhanced detection, the Shield Response Team, cost protection for attack-driven scaling, and WAF integration.',
+      eliminate: { 1: 'Standard is automatic and free but has no response team or cost protection.', 2: 'GuardDuty detects threats; it does not mitigate DDoS.', 3: 'Firewall Manager manages policies; it is not DDoS protection by itself.' },
+      trigger: 'DDoS + response team + cost protection → Shield Advanced.' },
+    { id: 'P2-16', concept: 's3-core', domain: 'secure',
+      scenario: 'A company must find out which of its thousands of S3 objects contain personally identifiable information, such as passport numbers and credit card numbers. Which service automates this?',
+      options: ['Amazon Macie', 'Amazon GuardDuty', 'AWS Config', 'Amazon Detective'],
+      answer: 0, proof: 'Macie uses machine learning and pattern matching to discover and report sensitive data in S3.',
+      eliminate: { 1: 'GuardDuty detects threats, not data types.', 2: 'Config tracks resource settings, not object contents.', 3: 'Detective helps investigate security findings.' },
+      trigger: 'Sensitive data / PII in S3 → Macie.' },
+    { id: 'P2-17', concept: 'identity', domain: 'secure',
+      scenario: 'A web application needs user sign-up and sign-in with email verification, MFA and social logins, without the team building an identity system. What should be used?',
+      options: ['Amazon Cognito user pools', 'IAM users for every customer', 'AWS IAM Identity Center', 'AWS Directory Service for Microsoft AD'],
+      answer: 0, proof: 'Cognito user pools are a managed customer identity directory with sign-up, sign-in, MFA, verification and federation to social and SAML providers.',
+      eliminate: { 1: 'IAM users are for AWS access, not app customers.', 2: 'Identity Center is for the workforce.', 3: 'Managed AD is for Windows workloads and employees.' },
+      trigger: 'App users sign up / sign in → Cognito user pools.' },
+    { id: 'P2-18', concept: 'iam-core', domain: 'secure',
+      scenario: 'A company wants continuous, automated scanning of its EC2 instances and container images in Amazon ECR for software vulnerabilities and unintended network exposure. Which service should it use?',
+      options: ['Amazon Inspector', 'Amazon Macie', 'AWS Trusted Advisor', 'Amazon GuardDuty'],
+      answer: 0, proof: 'Inspector automatically discovers EC2 instances, ECR images and Lambda functions and scans them for CVEs and network reachability issues.',
+      eliminate: { 1: 'Macie is about sensitive data in S3.', 2: 'Trusted Advisor gives best-practice checks, not CVE scanning.', 3: 'GuardDuty detects active threats, not unpatched packages.' },
+      trigger: 'Vulnerability scanning (CVEs) → Amazon Inspector.' },
+    { id: 'P2-19', type: 'multi', concept: 'vpce', domain: 'secure',
+      scenario: 'An S3 bucket holding sensitive files must be accessible only from instances inside one specific VPC, and never over the internet. Which TWO steps achieve this? (Choose TWO.)',
+      options: ['Create an S3 gateway VPC endpoint in the VPC and add it to the route tables.', 'Add a bucket policy that denies access unless aws:SourceVpce matches that endpoint.', 'Attach a security group to the S3 bucket.', 'Add a network ACL rule to the bucket.', 'Make the bucket public but restrict it by IP address.'],
+      answer: [0, 1], proof: 'Traffic flows privately through the gateway endpoint, and the bucket policy rejects any request that does not arrive through it.',
+      eliminate: { 2: 'Buckets do not have security groups.', 3: 'NACLs apply to subnets, not buckets.', 4: 'Public buckets are the opposite of the requirement.' },
+      trigger: 'Bucket reachable only from a VPC → gateway endpoint + aws:SourceVpce policy.' },
+    { id: 'P2-20', concept: 'iam-core', domain: 'secure',
+      scenario: 'Auditors want continuous detection of any EBS volume that is not encrypted, with a compliance history over time. What should a solutions architect use?',
+      options: ['An AWS Config managed rule (encrypted-volumes)', 'Amazon GuardDuty', 'Amazon CloudWatch Logs Insights', 'AWS Trusted Advisor only'],
+      answer: 0, proof: 'Config rules continuously evaluate resource configurations and keep a timeline of compliance, and can trigger remediation.',
+      eliminate: { 1: 'GuardDuty detects threats, not configuration compliance.', 2: 'Logs Insights queries logs; it does not evaluate configuration.', 3: 'Trusted Advisor is a periodic best-practice report, not continuous compliance history.' },
+      trigger: 'Continuous compliance of resource settings → AWS Config rules.' },
+    { id: 'P2-21', concept: 'iam-core', domain: 'secure',
+      scenario: 'Developers must be able to create IAM roles for their Lambda functions, but must never be able to create a role with more permissions than a defined maximum. What should be used?',
+      options: ['IAM permissions boundaries, required on any role developers create.', 'A Service Control Policy that denies iam:CreateRole.', 'Giving developers AdministratorAccess with an MFA condition.', 'IAM Access Analyzer only.'],
+      answer: 0, proof: 'A permissions boundary sets the maximum permissions an identity can have. Requiring it on roles created by developers lets them delegate safely without privilege escalation.',
+      eliminate: { 1: 'Denying CreateRole blocks the developers entirely.', 2: 'Administrator access allows unlimited escalation.', 3: 'Access Analyzer reports access; it does not cap it.' },
+      trigger: 'Delegate role creation safely → permissions boundaries.' },
+    { id: 'P2-22', concept: 'iam-core', domain: 'cost',
+      scenario: 'An application needs to store configuration values and a few encrypted parameters at no additional cost. Automatic rotation is not required. Which service fits BEST?',
+      options: ['AWS Systems Manager Parameter Store (standard parameters, SecureString)', 'AWS Secrets Manager', 'Amazon DynamoDB', 'An encrypted file in the AMI'],
+      answer: 0, proof: 'Standard parameters in Parameter Store are free, and SecureString parameters are encrypted with KMS.',
+      eliminate: { 1: 'Secrets Manager charges per secret; its key advantage is rotation, which is not needed.', 2: 'DynamoDB is a database, not a configuration store with KMS-integrated parameters.', 3: 'Values baked into an AMI cannot be changed without rebuilding.' },
+      trigger: 'Config + secrets, no rotation, low cost → Parameter Store.' },
+    { id: 'P2-23', concept: 'iam-core', domain: 'secure',
+      scenario: 'A company wants to remove its SSH bastion hosts and close port 22 on all instances, while administrators still get audited shell access. What should it use?',
+      options: ['AWS Systems Manager Session Manager', 'EC2 Instance Connect with port 22 open to 0.0.0.0/0', 'A Site-to-Site VPN for every administrator', 'Public IP addresses on every instance'],
+      answer: 0, proof: 'Session Manager opens shells through the SSM Agent\'s outbound connection, needs no inbound ports or SSH keys, and logs sessions to CloudWatch Logs or S3.',
+      eliminate: { 1: 'That keeps SSH open to the world.', 2: 'A VPN still needs SSH and key management.', 3: 'Public IPs increase exposure.' },
+      trigger: 'No bastion, no port 22, audited access → Session Manager.' },
+    { id: 'P2-24', type: 'multi', concept: 'ga-cf', domain: 'secure',
+      scenario: 'A website behind an Application Load Balancer must encrypt all traffic with users, and certificates must renew automatically. Which TWO steps should be taken? (Choose TWO.)',
+      options: ['Request a public certificate in AWS Certificate Manager and attach it to an HTTPS listener on the ALB.', 'Add an HTTP listener rule that redirects to HTTPS.', 'Upload a self-signed certificate to IAM.', 'Enable SSE-S3 on the ALB.', 'Add a NACL rule that blocks port 80.'],
+      answer: [0, 1], proof: 'ACM public certificates are free and renew automatically on integrated services such as ALB. Redirecting HTTP to HTTPS makes sure every user is encrypted.',
+      eliminate: { 2: 'Self-signed certificates are not trusted by browsers and do not auto-renew.', 3: 'SSE-S3 is S3 encryption at rest.', 4: 'Blocking port 80 breaks users who type http:// instead of redirecting them.' },
+      trigger: 'HTTPS on ALB with auto renewal → ACM certificate + redirect.' },
+    { id: 'P2-25', concept: 'iam-core', domain: 'secure',
+      scenario: 'A company with 30 accounts in AWS Organizations must record API activity from every account and Region in one place, and prove the logs were not modified. What should be done?',
+      options: ['Create an organization trail in CloudTrail delivering to an S3 bucket in a log archive account, with log file integrity validation enabled.', 'Enable CloudTrail event history in each account.', 'Turn on VPC Flow Logs in every VPC.', 'Enable AWS Config in the management account only.'],
+      answer: 0, proof: 'An organization trail captures all member accounts and Regions automatically. Integrity validation produces signed digest files that prove the logs are unchanged.',
+      eliminate: { 1: 'Event history is per account, keeps 90 days and is not centralised.', 2: 'Flow Logs capture network traffic, not API calls.', 3: 'Config records configuration changes, and only for the accounts where it runs.' },
+      trigger: 'Centralised, tamper-evident API logs → organization trail + log file validation.' },
+  ],
+  3: [
+    { id: 'P3-11', concept: 'analytics', domain: 'performance',
+      scenario: 'A ride-sharing app streams thousands of location events per second. Several applications must read the same stream independently in real time, and data must be replayable for 24 hours. Which service should be used?',
+      options: ['Amazon Kinesis Data Streams', 'Amazon SQS standard queue', 'Amazon SNS', 'Amazon S3 with event notifications'],
+      answer: 0, proof: 'Kinesis Data Streams keeps ordered records per shard for a retention period (24 hours by default), and many consumers can read the same data independently and replay it.',
+      eliminate: { 1: 'A message in SQS is consumed by one consumer and then deleted.', 2: 'SNS does not retain messages for replay.', 3: 'S3 is not built for real-time per-record streaming.' },
+      trigger: 'Real-time stream + multiple consumers + replay → Kinesis Data Streams.' },
+    { id: 'P3-12', concept: 'analytics', domain: 'performance',
+      scenario: 'A company must load clickstream data into Amazon S3 in near real time, converted to Parquet, with no servers or custom consumer code to manage. What should it use?',
+      options: ['Amazon Data Firehose with record format conversion to Parquet', 'Amazon SQS with an EC2 consumer', 'AWS Batch jobs every hour', 'Amazon EMR running Spark Streaming'],
+      answer: 0, proof: 'Firehose is fully managed delivery to S3, Redshift, OpenSearch and others, with buffering, compression and built-in conversion to Parquet or ORC.',
+      eliminate: { 1: 'Requires writing and running consumer code.', 2: 'Hourly batches are not near real time.', 3: 'EMR clusters must be managed.' },
+      trigger: 'Stream into S3/Redshift with no code → Data Firehose.' },
+    { id: 'P3-13', concept: 'analytics', domain: 'performance',
+      scenario: 'Analysts occasionally need to run SQL queries against terabytes of application logs already stored in S3. The company does not want to load the data anywhere or manage any infrastructure. What should be used?',
+      options: ['Amazon Athena', 'Amazon Redshift provisioned cluster', 'Amazon RDS for PostgreSQL', 'Amazon EMR cluster running Hive'],
+      answer: 0, proof: 'Athena is serverless SQL directly over data in S3, and you pay per terabyte scanned. It is ideal for ad-hoc queries.',
+      eliminate: { 1: 'A provisioned warehouse must be loaded and managed.', 2: 'RDS needs the data loaded and is not built for TB-scale log analytics.', 3: 'EMR clusters need management.' },
+      trigger: 'Ad-hoc SQL on S3, serverless → Athena.' },
+    { id: 'P3-14', concept: 'analytics', domain: 'performance',
+      scenario: 'Business intelligence dashboards run complex joins and aggregations over 50 TB of structured sales history and need consistently fast results for many concurrent users. Which service fits BEST?',
+      options: ['Amazon Redshift', 'Amazon DynamoDB', 'Amazon RDS for MySQL', 'Amazon ElastiCache'],
+      answer: 0, proof: 'Redshift is a columnar, massively parallel data warehouse built for complex analytical SQL over terabytes to petabytes.',
+      eliminate: { 1: 'DynamoDB is key-value storage without joins.', 2: 'A transactional database struggles with large analytical scans.', 3: 'A cache is not an analytics engine.' },
+      trigger: 'Data warehouse / BI / complex SQL at scale → Redshift.' },
+    { id: 'P3-15', concept: 'ga-cf', domain: 'performance',
+      scenario: 'A website served through CloudFront must add security headers to every response and rewrite some URLs with sub-millisecond overhead at the edge, at the lowest cost. What should be used?',
+      options: ['CloudFront Functions', 'Lambda@Edge on origin requests', 'A Lambda function behind API Gateway', 'An NGINX proxy on EC2'],
+      answer: 0, proof: 'CloudFront Functions run lightweight JavaScript at edge locations for viewer requests and responses, with sub-millisecond startup and lower cost than Lambda@Edge.',
+      eliminate: { 1: 'Lambda@Edge suits heavier logic (network calls, larger code) and costs more.', 2: 'Adds a full round trip to a Region.', 3: 'An extra proxy adds latency and operations work.' },
+      trigger: 'Simple header/URL logic at the edge → CloudFront Functions.' },
+    { id: 'P3-16', concept: 'fsr', domain: 'cost',
+      scenario: 'A database on EC2 needs 10,000 IOPS on a 200 GiB volume. Which EBS option provides this at the lowest cost?',
+      options: ['gp3 with 10,000 provisioned IOPS', 'gp2 sized to 3,334 GiB to get 10,000 IOPS', 'io2 Block Express with 10,000 IOPS', 'st1 Throughput Optimized HDD'],
+      answer: 0, proof: 'gp3 provisions IOPS (up to 16,000) and throughput independently of size, so a small volume can get 10,000 IOPS cheaply.',
+      eliminate: { 1: 'gp2 ties IOPS to size (3 IOPS per GiB), so you pay for unused storage.', 2: 'io2 costs more and is meant for higher IOPS or durability needs.', 3: 'HDD volumes cannot deliver high random IOPS.' },
+      trigger: 'Up to 16,000 IOPS cost-effectively → gp3.' },
+    { id: 'P3-17', concept: 'storage', domain: 'performance',
+      scenario: 'A batch job needs very high random I/O for temporary scratch files that can be regenerated if lost. Which storage gives the best performance for this?',
+      options: ['EC2 instance store (NVMe) volumes', 'Amazon EFS', 'Amazon S3', 'EBS Cold HDD (sc1)'],
+      answer: 0, proof: 'Instance store is physically attached NVMe storage with extremely low latency and high IOPS. Its data is lost when the instance stops, which is fine for scratch data.',
+      eliminate: { 1: 'EFS is network storage with higher latency.', 2: 'S3 is object storage, not a scratch disk.', 3: 'sc1 is the slowest EBS option.' },
+      trigger: 'Temporary, very fast, can be lost → instance store.' },
+    { id: 'P3-18', concept: 'multiaz', domain: 'performance',
+      scenario: 'A mobile game needs a real-time leaderboard of millions of players, ranked by score, with sub-millisecond reads and updates. Which service fits BEST?',
+      options: ['Amazon ElastiCache for Redis (sorted sets)', 'Amazon RDS for MySQL with an index on score', 'Amazon S3', 'Amazon Redshift'],
+      answer: 0, proof: 'Redis sorted sets keep members ordered by score in memory, with fast rank and range queries.',
+      eliminate: { 1: 'Disk-based ORDER BY queries are much slower at this scale.', 2: 'S3 is not a database.', 3: 'Redshift is for analytics, not millisecond game updates.' },
+      trigger: 'Leaderboard / ranking in real time → Redis sorted sets.' },
+    { id: 'P3-19', type: 'multi', concept: 'ga-cf', domain: 'performance',
+      scenario: 'A web application on EC2 behind an ALB serves the same product images over and over, and builds every page by running the same database queries. Which TWO changes improve response times the MOST? (Choose TWO.)',
+      options: ['Serve images from S3 through Amazon CloudFront.', 'Cache frequent query results in Amazon ElastiCache.', 'Increase the EBS volume size on the instances.', 'Enable Multi-AZ on the database.', 'Move old images to S3 Glacier.'],
+      answer: [0, 1], proof: 'CloudFront caches images at the edge near users, and ElastiCache answers repeated queries from memory. Together they remove most of the repeated work.',
+      eliminate: { 2: 'Disk size does not speed up repeated work.', 3: 'Multi-AZ adds availability, not speed.', 4: 'Glacier slows retrieval down.' },
+      trigger: 'Repeated static content → CDN · repeated queries → cache.' },
+    { id: 'P3-20', concept: 'ec2-core', domain: 'performance',
+      scenario: 'A CPU-bound Lambda function takes 9 seconds per invocation with 512 MB of memory. How can its execution time be reduced with the least effort?',
+      options: ['Increase the function\'s memory setting, which also increases its CPU allocation.', 'Increase the timeout.', 'Enable provisioned concurrency.', 'Put the function in a VPC.'],
+      answer: 0, proof: 'Lambda allocates CPU in proportion to memory, so more memory means more CPU, and often lower total cost for CPU-bound code.',
+      eliminate: { 1: 'A longer timeout does not make the code faster.', 2: 'Provisioned concurrency removes cold starts, not processing time.', 3: 'A VPC adds no CPU.' },
+      trigger: 'Faster CPU-bound Lambda → more memory.' },
+    { id: 'P3-21', concept: 's3-core', domain: 'performance',
+      scenario: 'An application writes tens of thousands of objects per second into an S3 bucket under a single key prefix and receives 503 Slow Down errors. How should the workload be changed?',
+      options: ['Spread the objects across multiple key prefixes, since request limits apply per prefix.', 'Enable S3 Transfer Acceleration.', 'Switch the bucket to S3 One Zone-IA.', 'Enable versioning.'],
+      answer: 0, proof: 'S3 supports at least 3,500 PUT and 5,500 GET requests per second per prefix. Spreading keys across more prefixes multiplies the total throughput.',
+      eliminate: { 1: 'Acceleration speeds long-distance transfers, not request rates.', 2: 'Storage class does not change request limits.', 3: 'Versioning adds work and does not increase limits.' },
+      trigger: 'S3 503 Slow Down → more prefixes.' },
+    { id: 'P3-22', concept: 'ec2-core', domain: 'performance',
+      scenario: 'A tightly coupled HPC application using MPI needs the lowest-latency, highest-throughput network communication between instances that EC2 can provide. What should be attached to the instances?',
+      options: ['Elastic Fabric Adapter (EFA)', 'An additional Elastic Network Interface', 'An Elastic IP address', 'A NAT gateway'],
+      answer: 0, proof: 'EFA provides OS-bypass networking for MPI and NCCL workloads. Combined with a cluster placement group, it gives the best inter-node performance.',
+      eliminate: { 1: 'A second ENI adds interfaces, not low-latency bypass.', 2: 'Elastic IPs are public addresses.', 3: 'NAT gateways handle outbound internet traffic.' },
+      trigger: 'HPC / MPI network performance → EFA (+ cluster placement group).' },
+    { id: 'P3-23', concept: 'dynamodb', domain: 'performance',
+      scenario: 'An Orders table uses orderId as its partition key. The application now needs to query all orders for a customer efficiently, by customerId and date. What should be added?',
+      options: ['A global secondary index with customerId as the partition key and orderDate as the sort key.', 'A Scan with a filter expression on customerId.', 'DynamoDB Streams.', 'A second table copied every night.'],
+      answer: 0, proof: 'A GSI provides an alternative key structure with its own partition and sort keys, so the new access pattern can be queried efficiently.',
+      eliminate: { 1: 'Scans read the whole table: slow and expensive.', 2: 'Streams capture changes; they do not enable queries.', 3: 'A nightly copy is stale and doubles the work.' },
+      trigger: 'New query pattern on a non-key attribute → global secondary index.' },
+    { id: 'P3-24', type: 'multi', concept: 'aurora-global', domain: 'performance',
+      scenario: 'An Aurora MySQL cluster\'s writer is overloaded by read traffic that varies a lot during the day. Which TWO changes help MOST? (Choose TWO.)',
+      options: ['Add Aurora Replicas and send reads to the cluster reader endpoint.', 'Enable Aurora Auto Scaling for replicas.', 'Send reads to the Multi-AZ standby.', 'Increase allocated storage.', 'Create an Aurora Global Database for reads in the same Region.'],
+      answer: [0, 1], proof: 'The reader endpoint load-balances across Aurora Replicas, and Auto Scaling adds or removes replicas as read load changes.',
+      eliminate: { 2: 'Aurora replicas already act as failover targets; there is no separate readable standby to target.', 3: 'Aurora storage grows automatically and does not reduce load.', 4: 'A Global Database is for cross-Region DR and reads, not in-Region scaling.' },
+      trigger: 'Aurora read scaling → replicas + reader endpoint + Auto Scaling.' },
+    { id: 'P3-25', concept: 'ga-cf', domain: 'performance',
+      scenario: 'A REST API on API Gateway returns the same product catalogue response to many clients, and the backend Lambda function is invoked thousands of times per minute for identical requests. What reduces backend load with the least effort?',
+      options: ['Enable API Gateway caching for the stage with a suitable TTL.', 'Increase the Lambda function\'s memory.', 'Add a usage plan with API keys.', 'Move the API to a private endpoint.'],
+      answer: 0, proof: 'API Gateway caching stores responses for the TTL and serves repeated requests without invoking the backend.',
+      eliminate: { 1: 'More memory makes each call faster but does not remove calls.', 2: 'Usage plans limit clients; they do not cache.', 3: 'Endpoint type does not change call volume.' },
+      trigger: 'Repeated identical API responses → API Gateway caching.' },
+  ],
+  4: [
+    { id: 'P4-11', concept: 's3-core', domain: 'cost',
+      scenario: 'A hospital stores medical images that are rarely accessed (a few times a year), but when they are needed doctors must get them within milliseconds. Which storage class is MOST cost-effective?',
+      options: ['S3 Glacier Instant Retrieval', 'S3 Glacier Flexible Retrieval', 'S3 Standard', 'S3 Glacier Deep Archive'],
+      answer: 0, proof: 'Glacier Instant Retrieval is the lowest-cost class with millisecond access, designed for data accessed about once a quarter.',
+      eliminate: { 1: 'Flexible Retrieval takes minutes to hours.', 2: 'Standard costs more for rarely accessed data.', 3: 'Deep Archive takes hours.' },
+      trigger: 'Rarely accessed but needs milliseconds → Glacier Instant Retrieval.' },
+    { id: 'P4-12', concept: 's3-core', domain: 'cost',
+      scenario: 'Image thumbnails are generated from originals and can easily be re-created if lost. They are accessed infrequently. Which storage class minimises cost?',
+      options: ['S3 One Zone-IA', 'S3 Standard', 'S3 Standard-IA', 'S3 Intelligent-Tiering'],
+      answer: 0, proof: 'One Zone-IA costs about 20% less than Standard-IA by storing data in a single AZ, which is acceptable for re-creatable data.',
+      eliminate: { 1: 'Standard is more expensive for infrequent access.', 2: 'Standard-IA pays for multi-AZ resilience that is not needed.', 3: 'Intelligent-Tiering adds a monitoring fee per object.' },
+      trigger: 'Re-creatable + infrequent → One Zone-IA.' },
+    { id: 'P4-13', concept: 'ec2-core', domain: 'cost',
+      scenario: 'A report script runs for about 4 minutes once an hour. It currently runs on a dedicated EC2 instance that is idle the rest of the time. What is the MOST cost-effective approach?',
+      options: ['Run the script as a Lambda function on an EventBridge Scheduler schedule.', 'Buy a Reserved Instance for the EC2 instance.', 'Move the script to a larger instance so it finishes faster.', 'Run it on a Dedicated Host.'],
+      answer: 0, proof: 'Lambda bills only for execution time (about 4 minutes an hour), and EventBridge Scheduler triggers it with no servers.',
+      eliminate: { 1: 'A reservation still pays for an instance that is idle 93% of the time.', 2: 'Bigger instances cost more.', 3: 'Dedicated Hosts are the most expensive option.' },
+      trigger: 'Short, scheduled jobs → EventBridge Scheduler + Lambda.' },
+    { id: 'P4-14', concept: 'ec2-core', domain: 'cost',
+      scenario: 'Finance wants an email alert when forecast monthly AWS spend is expected to exceed the budget, before the month ends. What should be set up?',
+      options: ['AWS Budgets with a forecasted cost alert', 'A CloudWatch alarm on the CPUUtilization metric', 'AWS Trusted Advisor', 'AWS CloudTrail'],
+      answer: 0, proof: 'AWS Budgets can alert on actual or forecasted cost and usage, with email or SNS notifications and optional automatic actions.',
+      eliminate: { 1: 'CPU usage does not measure spend.', 2: 'Trusted Advisor gives recommendations, not budget alerts.', 3: 'CloudTrail logs API calls.' },
+      trigger: 'Alert on (forecasted) spend → AWS Budgets.' },
+    { id: 'P4-15', concept: 'fsr', domain: 'cost',
+      scenario: 'A company has hundreds of gp2 EBS volumes with the default performance. How can it lower storage costs with no performance loss and no downtime?',
+      options: ['Modify the volumes to gp3 using Elastic Volumes.', 'Convert the volumes to st1.', 'Snapshot and delete all volumes.', 'Move the data to instance store.'],
+      answer: 0, proof: 'gp3 is about 20% cheaper per GB than gp2 and includes a 3,000 IOPS / 125 MB/s baseline. Elastic Volumes changes the type live.',
+      eliminate: { 1: 'HDD volumes cannot serve as boot volumes and perform poorly for random I/O.', 2: 'That stops the workloads.', 3: 'Instance store is ephemeral.' },
+      trigger: 'gp2 → gp3 = cheaper, live migration.' },
+    { id: 'P4-16', concept: 'ec2-core', domain: 'cost',
+      scenario: 'A web tier in an Auto Scaling group must always keep 4 instances for a baseline, and scale out with up to 20 more during peaks at the lowest cost. The application tolerates the loss of extra instances. What should be configured?',
+      options: ['A mixed instances policy: an On-Demand base capacity of 4 and Spot Instances above the base, across several instance types.', 'All On-Demand instances.', 'All Spot Instances, including the baseline.', 'Dedicated Instances.'],
+      answer: 0, proof: 'Mixed instances policies combine a guaranteed On-Demand base with Spot for burst capacity, and diversifying instance types improves Spot availability.',
+      eliminate: { 1: 'On-Demand for peaks is the most expensive choice.', 2: 'A Spot-only baseline can be reclaimed.', 3: 'Dedicated Instances cost more.' },
+      trigger: 'Guaranteed base + cheap burst → On-Demand base + Spot.' },
+    { id: 'P4-17', concept: 'dynamodb', domain: 'cost',
+      scenario: 'A DynamoDB table has a steady, predictable workload around the clock, currently on on-demand capacity. How can its cost be reduced?',
+      options: ['Switch to provisioned capacity with auto scaling, and buy reserved capacity for the steady baseline.', 'Enable DAX.', 'Enable global tables.', 'Turn on PITR.'],
+      answer: 0, proof: 'On-demand is priced for unpredictable traffic. For steady load, provisioned capacity is cheaper, and reserved capacity lowers it further.',
+      eliminate: { 1: 'DAX adds cost unless reads are very hot.', 2: 'Global tables add replica cost.', 3: 'PITR adds a backup charge.' },
+      trigger: 'Steady, predictable DynamoDB traffic → provisioned (+ reserved).' },
+    { id: 'P4-18', concept: 'aurora-global', domain: 'cost',
+      scenario: 'Development teams use a MySQL-compatible database only during office hours, and usage is light and bursty. They want to pay only for the capacity they actually use. What should they use?',
+      options: ['Amazon Aurora Serverless v2', 'Amazon RDS for MySQL on a large Reserved Instance', 'Amazon Redshift', 'MySQL on an EC2 Dedicated Host'],
+      answer: 0, proof: 'Aurora Serverless v2 scales capacity up and down with demand, so idle and light periods cost little.',
+      eliminate: { 1: 'A reservation pays for 24/7 capacity.', 2: 'Redshift is an analytics warehouse.', 3: 'The most expensive and management-heavy option.' },
+      trigger: 'Intermittent relational workload → Aurora Serverless v2.' },
+    { id: 'P4-19', type: 'multi', concept: 's3-core', domain: 'cost',
+      scenario: 'Application logs in S3 are rarely accessed after 90 days and can be deleted after one year. A retrieval time of several hours is acceptable for old logs. Which TWO lifecycle actions minimise cost? (Choose TWO.)',
+      options: ['Transition objects to S3 Glacier Flexible Retrieval after 90 days.', 'Expire (delete) objects after 365 days.', 'Enable versioning on the bucket.', 'Enable S3 Transfer Acceleration.', 'Replicate the logs to another Region.'],
+      answer: [0, 1], proof: 'Glacier Flexible Retrieval is much cheaper for logs that are rarely read and can wait for a restore. An expiration action deletes them when they are no longer required.',
+      eliminate: { 2: 'Versioning keeps extra copies and adds cost.', 3: 'Acceleration adds cost for uploads.', 4: 'Replication doubles storage cost.' },
+      trigger: 'Age-based tiering + deletion → lifecycle transition + expiration.' },
+    { id: 'P4-20', concept: 'ec2-core', domain: 'cost',
+      scenario: 'A fault-tolerant, containerised batch workload runs on Amazon ECS with AWS Fargate. How can its compute cost be cut by up to about 70% with minimal changes?',
+      options: ['Run the tasks on Fargate Spot.', 'Move the tasks to EC2 Dedicated Hosts.', 'Double the task CPU and memory.', 'Run the tasks in a different Region.'],
+      answer: 0, proof: 'Fargate Spot runs interruption-tolerant tasks on spare capacity at a steep discount, using the same task definitions.',
+      eliminate: { 1: 'Dedicated Hosts cost more and require managing instances.', 2: 'Bigger tasks cost more.', 3: 'Regional price differences are small, and moving adds latency and transfer cost.' },
+      trigger: 'Interruptible containers on Fargate → Fargate Spot.' },
+    { id: 'P4-21', concept: 'fsr', domain: 'cost',
+      scenario: 'A company suspects it is paying for idle resources such as unattached EBS volumes, idle load balancers and underused EC2 instances. Which service provides checks that identify these directly?',
+      options: ['AWS Trusted Advisor cost optimization checks', 'Amazon GuardDuty', 'AWS CloudTrail', 'Amazon Inspector'],
+      answer: 0, proof: 'Trusted Advisor cost optimization checks flag idle and underused resources such as unattached EBS volumes and idle load balancers. Compute Optimizer adds right-sizing detail.',
+      eliminate: { 1: 'GuardDuty detects threats.', 2: 'CloudTrail logs API calls.', 3: 'Inspector finds vulnerabilities.' },
+      trigger: 'Find idle / waste → Trusted Advisor (and Compute Optimizer).' },
+    { id: 'P4-22', concept: 'analytics', domain: 'cost',
+      scenario: 'A data team runs SQL analytics on a data warehouse for only a few hours a week, at unpredictable times. They want to stop paying for an always-on cluster. What should they use?',
+      options: ['Amazon Redshift Serverless', 'A larger provisioned Redshift cluster with Reserved Nodes', 'Amazon RDS for PostgreSQL', 'Amazon ElastiCache'],
+      answer: 0, proof: 'Redshift Serverless automatically provisions capacity when queries run and bills only for compute used, so idle hours cost nothing for compute.',
+      eliminate: { 1: 'Reserved Nodes commit to paying 24/7.', 2: 'A transactional database is not a warehouse.', 3: 'A cache does not run analytics.' },
+      trigger: 'Intermittent warehouse usage → Redshift Serverless.' },
+    { id: 'P4-23', concept: 'analytics', domain: 'cost',
+      scenario: 'Athena queries over CSV logs in S3 scan the entire data set each time and are getting expensive. Most queries filter by date. What reduces cost the MOST?',
+      options: ['Convert the data to Parquet and partition it by date.', 'Enable S3 Transfer Acceleration.', 'Move the data to S3 Glacier Deep Archive.', 'Increase the Athena workgroup query timeout.'],
+      answer: 0, proof: 'Athena charges per byte scanned. Columnar Parquet reads only the needed columns, and partitions let queries skip irrelevant dates entirely.',
+      eliminate: { 1: 'Acceleration does not affect Athena scans.', 2: 'Athena cannot query Deep Archive objects directly.', 3: 'A timeout does not reduce scanned data.' },
+      trigger: 'Cut Athena cost → columnar formats + partitioning.' },
+    { id: 'P4-24', type: 'multi', concept: 'ec2-core', domain: 'cost',
+      scenario: 'A company will run a steady RDS for MySQL database and a steady fleet of EC2 instances 24/7 for the next 3 years. Which TWO purchases reduce cost the MOST? (Choose TWO.)',
+      options: ['RDS Reserved Instances for the database.', 'A Compute Savings Plan for the EC2 fleet.', 'Spot Instances for the RDS database.', 'Dedicated Hosts for the EC2 fleet.', 'On-Demand Capacity Reservations for the EC2 fleet.'],
+      answer: [0, 1], proof: 'RDS Reserved Instances discount steady database usage, and Savings Plans discount steady compute while keeping flexibility.',
+      eliminate: { 2: 'RDS cannot run on Spot.', 3: 'Dedicated Hosts cost more.', 4: 'Capacity Reservations reserve capacity at On-Demand prices; they give no discount on their own.' },
+      trigger: 'Steady 3-year usage → RDS RIs + Savings Plans.' },
+    { id: 'P4-25', concept: 's3-core', domain: 'cost',
+      scenario: 'A research institute shares a 200 TB public data set in S3 and does not want to pay the data transfer costs when other organisations download it. What should it configure?',
+      options: ['Enable Requester Pays on the bucket.', 'Enable S3 Transfer Acceleration.', 'Move the data to S3 One Zone-IA.', 'Put the data behind CloudFront.'],
+      answer: 0, proof: 'With Requester Pays, the requester\'s AWS account pays for requests and data transfer, while the bucket owner pays only for storage.',
+      eliminate: { 1: 'Acceleration adds cost.', 2: 'Storage class does not shift transfer costs.', 3: 'CloudFront transfer is still billed to the distribution owner.' },
+      trigger: 'Downloaders should pay transfer → Requester Pays.' },
+  ],
+  5: [
+    { id: 'P5-11', concept: 'vpc-core', domain: 'performance',
+      scenario: 'Three microservices (/orders, /users, /payments) run in separate target groups. One public endpoint must route requests to the right service by URL path. What should be used?',
+      options: ['An Application Load Balancer with path-based listener rules.', 'A Network Load Balancer with three listeners.', 'Three Classic Load Balancers.', 'Route 53 weighted records.'],
+      answer: 0, proof: 'ALB listener rules inspect the HTTP path (and host, headers, query strings) and forward to the matching target group.',
+      eliminate: { 1: 'NLBs work at layer 4 and cannot see URL paths.', 2: 'Classic Load Balancers are legacy and have no path routing.', 3: 'DNS cannot route by URL path.' },
+      trigger: 'Route by path or host → ALB.' },
+    { id: 'P5-12', concept: 'vpc-core', domain: 'performance',
+      scenario: 'A trading application uses a custom TCP protocol, must handle millions of requests per second with ultra-low latency, and clients need one static IP address per AZ to allowlist. Which load balancer should be used?',
+      options: ['Network Load Balancer', 'Application Load Balancer', 'Gateway Load Balancer', 'Classic Load Balancer'],
+      answer: 0, proof: 'NLBs operate at layer 4 (TCP/UDP/TLS), scale to millions of requests per second with very low latency, and provide a static IP (or Elastic IP) per AZ.',
+      eliminate: { 1: 'ALBs are for HTTP/HTTPS and do not have static IPs.', 2: 'GWLBs insert third-party appliances.', 3: 'Classic Load Balancers are legacy and slower.' },
+      trigger: 'TCP/UDP + extreme performance + static IP → NLB.' },
+    { id: 'P5-13', concept: 'ga-cf', domain: 'resilient',
+      scenario: 'A team wants to send 10% of users to a new version of an application running behind a separate ALB, and gradually increase the share. Which Route 53 routing policy should be used?',
+      options: ['Weighted routing', 'Latency-based routing', 'Geolocation routing', 'Simple routing'],
+      answer: 0, proof: 'Weighted records split traffic in proportion to the weights, such as 90/10 for a canary release.',
+      eliminate: { 1: 'Latency routing picks the fastest Region, not a percentage.', 2: 'Geolocation routes by user location.', 3: 'Simple routing cannot set proportions.' },
+      trigger: 'Percentage split / canary → weighted routing.' },
+    { id: 'P5-14', concept: 'ga-cf', domain: 'secure',
+      scenario: 'For legal reasons, users in Germany must be served by the EU deployment of an application, and users in the US by the US deployment, regardless of latency. Which routing policy is required?',
+      options: ['Geolocation routing', 'Latency-based routing', 'Weighted routing', 'Multivalue answer routing'],
+      answer: 0, proof: 'Geolocation routing answers DNS queries based on the user\'s location (continent, country or US state), which suits data-residency and content-localisation rules. Add a default record for unmatched locations.',
+      eliminate: { 1: 'Latency routing could send German users elsewhere if it is faster.', 2: 'Weights ignore location.', 3: 'Multivalue returns several healthy records at random.' },
+      trigger: 'Route by user location for legal reasons → geolocation routing.' },
+    { id: 'P5-15', concept: 'ga-cf', domain: 'performance',
+      scenario: 'The company\'s root domain (example.com) must point to an Application Load Balancer. A CNAME record is not allowed at the zone apex. What should be created?',
+      options: ['A Route 53 alias record pointing to the ALB.', 'A CNAME record at the apex.', 'An A record with the ALB\'s current IP addresses.', 'An MX record.'],
+      answer: 0, proof: 'Alias records can be created at the zone apex, follow the ALB\'s changing IP addresses automatically, and are free for AWS targets.',
+      eliminate: { 1: 'DNS standards forbid a CNAME at the apex.', 2: 'ALB IP addresses change, so hard-coded A records break.', 3: 'MX records route email.' },
+      trigger: 'Zone apex → AWS resource → alias record.' },
+    { id: 'P5-16', concept: 'vpce', domain: 'cost',
+      scenario: 'EC2 instances in private subnets read and write large amounts of data to DynamoDB through a NAT gateway. How can traffic stay private and NAT costs be removed?',
+      options: ['Create a gateway VPC endpoint for DynamoDB and add it to the private route tables.', 'Create an interface endpoint for DynamoDB in every subnet.', 'Move the instances to public subnets.', 'Use a VPN connection to DynamoDB.'],
+      answer: 0, proof: 'Gateway endpoints for DynamoDB (and S3) are free and route traffic privately, bypassing the NAT gateway.',
+      eliminate: { 1: 'Interface endpoints have hourly and per-GB charges; the gateway endpoint is free.', 2: 'That reduces security.', 3: 'DynamoDB is not reached over VPN.' },
+      trigger: 'DynamoDB/S3 from private subnets, cheaply → gateway endpoint.' },
+    { id: 'P5-17', concept: 'sg-nacl', domain: 'secure',
+      scenario: 'A network ACL has rule 100 ALLOW all inbound traffic and rule 200 DENY inbound traffic from 203.0.113.0/24. Traffic from that range still reaches the instances. What is wrong?',
+      options: ['NACL rules are evaluated in ascending order and the first match wins, so the DENY must have a lower number than 100.', 'NACLs cannot deny traffic.', 'The DENY rule must be added to the security group instead.', 'NACL changes take 24 hours to apply.'],
+      answer: 0, proof: 'Rule 100 matches first and allows the traffic, so rule 200 is never evaluated. Give the deny rule a lower number, such as 90.',
+      eliminate: { 1: 'NACLs support both ALLOW and DENY.', 2: 'Security groups cannot deny.', 3: 'NACL changes apply almost immediately.' },
+      trigger: 'NACL deny not working → check rule order (lowest number first).' },
+    { id: 'P5-18', concept: 'vpc-core', domain: 'secure',
+      scenario: 'A company uses AWS Direct Connect for consistent performance, but compliance now requires that data in transit between the data centre and AWS is encrypted. What is the MOST appropriate solution?',
+      options: ['Run an AWS Site-to-Site VPN over the Direct Connect connection (or use MACsec on supported dedicated connections).', 'Direct Connect is already encrypted, so nothing is needed.', 'Replace Direct Connect with VPC peering.', 'Enable SSE-KMS on the Direct Connect connection.'],
+      answer: 0, proof: 'Direct Connect is private but not encrypted by default. IPsec VPN over Direct Connect, or MACsec at layer 2, adds encryption while keeping the dedicated path.',
+      eliminate: { 1: 'Direct Connect traffic is not encrypted by default.', 2: 'Peering connects VPCs, not data centres.', 3: 'SSE-KMS is encryption at rest.' },
+      trigger: 'Encrypt Direct Connect traffic → VPN over DX or MACsec.' },
+    { id: 'P5-19', type: 'multi', concept: 'vpc-core', domain: 'secure',
+      scenario: 'An internal web application on EC2 instances in private subnets must be made available to internet users securely. Which TWO steps should be taken? (Choose TWO.)',
+      options: ['Create an internet-facing Application Load Balancer in public subnets that targets the instances.', 'Allow inbound traffic on the instances\' security group only from the ALB\'s security group.', 'Assign Elastic IP addresses to the instances.', 'Move the instances into the public subnets.', 'Route inbound internet traffic through the NAT gateway.'],
+      answer: [0, 1], proof: 'The ALB is the only internet-facing component; the instances stay private and accept traffic only from the load balancer.',
+      eliminate: { 2: 'Public IPs on instances expose them directly.', 3: 'Moving to public subnets widens the attack surface.', 4: 'NAT gateways do not accept inbound connections.' },
+      trigger: 'Publish private instances → internet-facing ALB + SG chaining.' },
+    { id: 'P5-20', concept: 'ga-cf', domain: 'secure',
+      scenario: 'A video platform serves paid content through CloudFront. Only logged-in subscribers may access a set of videos for a limited time, and the links must not work if shared. What should be used?',
+      options: ['CloudFront signed URLs or signed cookies', 'S3 presigned URLs directly on the bucket', 'A public S3 bucket with obscure object names', 'Route 53 private hosted zone'],
+      answer: 0, proof: 'Signed URLs (one file) or signed cookies (many files) grant time-limited access through CloudFront, enforced at the edge.',
+      eliminate: { 1: 'Presigned URLs bypass CloudFront caching and edge protections.', 2: 'Security through obscurity is not access control.', 3: 'Private hosted zones are for internal DNS.' },
+      trigger: 'Restrict CloudFront content to paying users → signed URLs/cookies.' },
+    { id: 'P5-21', concept: 'vpc-core', domain: 'cost',
+      scenario: 'A central networking team wants to own and manage subnets in one VPC, while application teams in other accounts launch their resources directly into those subnets. What enables this?',
+      options: ['VPC sharing through AWS Resource Access Manager', 'VPC peering between every account', 'A Transit Gateway per account', 'Copying the VPC configuration with CloudFormation'],
+      answer: 0, proof: 'With VPC sharing (AWS RAM), the owner shares subnets with other accounts in the organization. Participants launch resources into them, and the owner keeps control of the network.',
+      eliminate: { 1: 'Peering connects separate VPCs; it does not share subnets.', 2: 'Transit Gateways interconnect VPCs; they do not share subnets.', 3: 'Copies are separate VPCs, not centrally managed.' },
+      trigger: 'Centrally managed subnets used by many accounts → VPC sharing (RAM).' },
+    { id: 'P5-22', concept: 'vpc-core', domain: 'performance',
+      scenario: 'An engineer cannot connect from an EC2 instance to an RDS database, and wants to find out which route table, security group or NACL is blocking the path without sending test traffic. Which tool should be used?',
+      options: ['VPC Reachability Analyzer', 'Amazon CloudWatch Synthetics', 'AWS Trusted Advisor', 'Amazon Inspector'],
+      answer: 0, proof: 'Reachability Analyzer analyses the configuration path between a source and destination and pinpoints the blocking component.',
+      eliminate: { 1: 'Synthetics runs canary tests against endpoints.', 2: 'Trusted Advisor gives best-practice checks.', 3: 'Inspector scans for vulnerabilities.' },
+      trigger: 'Why can\'t A reach B? → VPC Reachability Analyzer.' },
+    { id: 'P5-23', concept: 'vpce', domain: 'performance',
+      scenario: 'After an interface VPC endpoint for Amazon SQS is created, the application must keep using the standard public SQS DNS name, but traffic must go through the endpoint. What should be enabled?',
+      options: ['Private DNS on the interface endpoint (with DNS hostnames and DNS resolution enabled on the VPC).', 'A Route 53 public hosted zone for sqs.amazonaws.com.', 'A NAT gateway.', 'An internet gateway.'],
+      answer: 0, proof: 'With private DNS, the default service hostname resolves to the endpoint\'s private IPs inside the VPC, so no application change is needed.',
+      eliminate: { 1: 'You cannot take over AWS public DNS names publicly.', 2: 'NAT sends traffic over the internet path.', 3: 'An IGW is unrelated to endpoint DNS.' },
+      trigger: 'Use endpoints without code changes → private DNS on the interface endpoint.' },
+    { id: 'P5-24', type: 'multi', concept: 'vpc-core', domain: 'performance',
+      scenario: 'In a hybrid network, on-premises servers must resolve names in a Route 53 private hosted zone, and EC2 instances must resolve names in the corporate domain (corp.example.com) hosted on-premises. Which TWO Route 53 Resolver components are needed? (Choose TWO.)',
+      options: ['An inbound Resolver endpoint that on-premises DNS servers forward queries to.', 'An outbound Resolver endpoint with a forwarding rule for corp.example.com.', 'A public hosted zone for corp.example.com.', 'Hosts files on every instance.', 'A DHCP options set pointing only at the on-premises DNS servers.'],
+      answer: [0, 1], proof: 'Inbound endpoints receive queries from on-premises; outbound endpoints with forwarding rules send AWS queries for corporate domains to on-premises DNS.',
+      eliminate: { 2: 'That would publish internal names to the internet.', 3: 'Hosts files do not scale.', 4: 'That breaks resolution of AWS private names.' },
+      trigger: 'On-prem → AWS = inbound endpoint · AWS → on-prem = outbound endpoint + rule.' },
+    { id: 'P5-25', concept: 'vpc-core', domain: 'resilient',
+      scenario: 'A company has Transit Gateways in us-east-1 and eu-west-1, each connecting many VPCs. VPCs in both Regions must communicate privately over the AWS backbone. What should be configured?',
+      options: ['Transit Gateway inter-Region peering between the two Transit Gateways.', 'VPC peering between every pair of VPCs across Regions.', 'Site-to-Site VPN connections over the internet.', 'An internet gateway in each VPC.'],
+      answer: 0, proof: 'Inter-Region peering links Transit Gateways over the AWS global network, with encrypted traffic and static routes between the two hubs.',
+      eliminate: { 1: 'A full mesh of peering connections does not scale.', 2: 'Internet VPNs are not the AWS backbone.', 3: 'Internet gateways are not private connectivity.' },
+      trigger: 'Connect Transit Gateways across Regions → TGW peering.' },
+  ],
+  6: [
+    { id: 'P6-11', concept: 'aurora-global', domain: 'cost',
+      scenario: 'A company wants to migrate an on-premises Oracle database to Amazon Aurora PostgreSQL to remove licensing costs. The schema and stored procedures must be converted. Which tools should be used?',
+      options: ['AWS Schema Conversion Tool (or DMS Schema Conversion) for the schema, then AWS Database Migration Service for the data.', 'AWS DataSync', 'AWS Snowball Edge only', 'S3 Cross-Region Replication'],
+      answer: 0, proof: 'Heterogeneous migrations need schema conversion first; DMS then migrates the data and can keep it in sync with change data capture until cutover.',
+      eliminate: { 1: 'DataSync moves files, not database schemas.', 2: 'Snowball moves bulk data offline but converts nothing.', 3: 'Replication copies S3 objects.' },
+      trigger: 'Engine change (Oracle → PostgreSQL) → SCT + DMS.' },
+    { id: 'P6-12', concept: 'multiaz', domain: 'resilient',
+      scenario: 'An on-premises MySQL database must be migrated to Amazon RDS for MySQL with only a few minutes of downtime. The source must stay online and keep receiving writes during the migration. What should be used?',
+      options: ['AWS DMS with a full load followed by ongoing replication (change data capture), then a short cutover.', 'A nightly mysqldump uploaded to S3', 'AWS Storage Gateway', 'AWS Application Migration Service'],
+      answer: 0, proof: 'DMS copies the existing data, then streams ongoing changes (CDC) until the target is in sync, so cutover takes minutes.',
+      eliminate: { 1: 'Dump and restore means long downtime or data loss.', 2: 'Storage Gateway is for file, volume and tape storage.', 3: 'MGN rehosts servers, not managed database targets.' },
+      trigger: 'Database migration with minimal downtime → DMS + CDC.' },
+    { id: 'P6-13', concept: 'ec2-core', domain: 'resilient',
+      scenario: 'A company must lift-and-shift 300 on-premises VMware and physical servers to EC2 with minimal changes and short cutover windows. Which service should be used?',
+      options: ['AWS Application Migration Service', 'AWS Database Migration Service', 'AWS DataSync', 'AWS Snowcone'],
+      answer: 0, proof: 'Application Migration Service (MGN) continuously replicates source servers at block level and launches them as EC2 instances with minimal downtime.',
+      eliminate: { 1: 'DMS migrates databases, not whole servers.', 2: 'DataSync moves files.', 3: 'Snowcone is a small edge and transfer device.' },
+      trigger: 'Rehost many servers → Application Migration Service.' },
+    { id: 'P6-14', concept: 'storage', domain: 'performance',
+      scenario: 'A company needs to copy 50 TB from an on-premises NFS server to Amazon EFS over its 10 Gbps Direct Connect link, with scheduling, encryption in transit and integrity verification. What should it use?',
+      options: ['AWS DataSync', 'AWS Snowball Edge', 'S3 Transfer Acceleration', 'A custom rsync script on one server'],
+      answer: 0, proof: 'DataSync is a managed online transfer service for NFS, SMB, HDFS and object storage to S3, EFS and FSx, with scheduling, encryption, verification and much faster transfers than open-source tools.',
+      eliminate: { 1: 'An offline device is unnecessary with a fast link.', 2: 'Transfer Acceleration targets S3, not EFS.', 3: 'A script lacks managed retries, verification and scheduling.' },
+      trigger: 'Online file transfer to EFS/S3/FSx → DataSync.' },
+    { id: 'P6-15', concept: 'asg', domain: 'performance',
+      scenario: 'A small team wants to deploy a Java web application with load balancing, Auto Scaling, health monitoring and patch management handled for them, without designing the infrastructure. Which service fits BEST?',
+      options: ['AWS Elastic Beanstalk', 'Amazon EC2 with hand-built scripts', 'AWS CloudFormation written from scratch', 'Amazon Lightsail object storage'],
+      answer: 0, proof: 'Elastic Beanstalk provisions and manages the load balancer, Auto Scaling group, monitoring and platform updates. You just upload the application.',
+      eliminate: { 1: 'Everything would be built and maintained by hand.', 2: 'Writing templates is infrastructure design work.', 3: 'Object storage cannot run an application.' },
+      trigger: 'Deploy an app quickly with managed infrastructure → Elastic Beanstalk.' },
+    { id: 'P6-16', concept: 'iam-core', domain: 'secure',
+      scenario: 'A security baseline (an IAM role, a CloudTrail configuration and Config rules) must be deployed automatically to every existing and future account in an AWS Organization, in several Regions. What should be used?',
+      options: ['CloudFormation StackSets with service-managed permissions and automatic deployment.', 'Running the CloudFormation template manually in each account.', 'AWS Elastic Beanstalk', 'An SCP that creates the resources'],
+      answer: 0, proof: 'StackSets deploy one template across accounts and Regions, and with automatic deployment they also roll out to new accounts added to the target OUs.',
+      eliminate: { 1: 'Manual deployment drifts and misses new accounts.', 2: 'Beanstalk deploys applications.', 3: 'SCPs only restrict permissions; they create nothing.' },
+      trigger: 'Deploy to many accounts/Regions → CloudFormation StackSets.' },
+    { id: 'P6-17', concept: 'iam-core', domain: 'secure',
+      scenario: 'Whenever an S3 bucket becomes publicly readable, it must be fixed automatically within minutes and the event recorded for audit. Which solution requires the least custom code?',
+      options: ['An AWS Config managed rule with an automatic remediation action using an SSM Automation document.', 'A cron job that lists all buckets every hour.', 'Amazon Macie', 'Amazon Inspector'],
+      answer: 0, proof: 'Config detects the noncompliant bucket on configuration change and runs the SSM Automation runbook (such as AWS-DisableS3BucketPublicReadWrite) automatically, keeping a compliance timeline.',
+      eliminate: { 1: 'Custom polling is slow and error-prone.', 2: 'Macie finds sensitive data; it does not fix access settings.', 3: 'Inspector scans for vulnerabilities.' },
+      trigger: 'Detect + auto-fix misconfiguration → Config rule + SSM remediation.' },
+    { id: 'P6-18', concept: 'fanout', domain: 'cost',
+      scenario: 'An SNS topic publishes all order events, but the shipping queue should receive only orders where "type" is "physical". How can this be done without changing the publisher?',
+      options: ['Add an SNS subscription filter policy on the shipping queue\'s subscription.', 'Create a separate topic for each order type.', 'Filter the messages in the shipping service code after receiving them.', 'Use an SQS FIFO queue.'],
+      answer: 0, proof: 'Subscription filter policies match message attributes (or the message body) so each subscriber receives only the messages it cares about.',
+      eliminate: { 1: 'That requires changing the publisher.', 2: 'This works but wastes processing and cost on unwanted messages.', 3: 'FIFO controls ordering, not filtering.' },
+      trigger: 'Subscribers want different subsets → SNS filter policies.' },
+    { id: 'P6-19', type: 'multi', concept: 'sqs', domain: 'resilient',
+      scenario: 'A serverless pipeline must process images uploaded to S3. Uploads come in large bursts, and no image may be skipped. Which TWO components should be part of the design? (Choose TWO.)',
+      options: ['S3 event notifications sent to an SQS queue.', 'A Lambda function that consumes the queue in batches, with a dead-letter queue for failures.', 'An EC2 instance that lists the bucket every second.', 'API Gateway accepting the full image in a synchronous request.', 'A cron job on a single server.'],
+      answer: [0, 1], proof: 'SQS durably buffers every upload event during bursts, and Lambda scales with the queue. Failed items are retried and end up in the DLQ instead of being lost.',
+      eliminate: { 2: 'Polling S3 listings is slow, costly and a single point of failure.', 3: 'Large synchronous uploads hit payload and timeout limits.', 4: 'One server is a single point of failure.' },
+      trigger: 'Bursty, lossless serverless processing → S3 → SQS → Lambda (+ DLQ).' },
+    { id: 'P6-20', concept: 'ec2-core', domain: 'secure',
+      scenario: 'A containerised application on Amazon ECS must write objects to an S3 bucket. How should the container receive AWS permissions?',
+      options: ['Attach an IAM task role to the ECS task definition with s3:PutObject on the bucket.', 'Add s3:PutObject to the task execution role.', 'Bake an IAM user\'s access keys into the container image.', 'Give the EC2 container instances AdministratorAccess.'],
+      answer: 0, proof: 'The task role provides credentials to the application code in the container. The task execution role is only for ECS itself (pulling images, writing logs).',
+      eliminate: { 1: 'The execution role is used by the ECS agent, not by your application.', 2: 'Keys in images leak and never rotate.', 3: 'Broad host permissions break least privilege.' },
+      trigger: 'App permissions in ECS → task role (not execution role).' },
+    { id: 'P6-21', concept: 'fsr', domain: 'resilient',
+      scenario: 'A company must back up EBS volumes, RDS databases, DynamoDB tables and EFS file systems across many accounts with central policies, and copy backups to another Region. What should it use?',
+      options: ['AWS Backup with backup plans, organization policies and cross-Region copy.', 'Custom Lambda scripts per service.', 'S3 Cross-Region Replication', 'Amazon Data Lifecycle Manager only'],
+      answer: 0, proof: 'AWS Backup centralises scheduling, retention and cross-Region/cross-account copies for many services, managed through organization-wide backup policies.',
+      eliminate: { 1: 'Scripts per service are fragile and hard to audit.', 2: 'CRR only covers S3 objects.', 3: 'DLM covers EBS snapshots and AMIs only.' },
+      trigger: 'Centralised backups across services/accounts → AWS Backup.' },
+    { id: 'P6-22', concept: 'dynamodb', domain: 'performance',
+      scenario: 'A serverless application on Lambda needs a fast, scalable store for user session data that should expire automatically after 2 hours of inactivity. Which solution fits BEST?',
+      options: ['A DynamoDB table with a TTL attribute updated on each request.', 'Session files on the Lambda /tmp directory.', 'An RDS database with a cleanup cron job.', 'S3 objects with a lifecycle rule.'],
+      answer: 0, proof: 'DynamoDB offers millisecond reads and writes at any scale, and TTL deletes expired sessions automatically at no write cost.',
+      eliminate: { 1: '/tmp is per execution environment and not shared.', 2: 'Connection limits and the cleanup job add burden.', 3: 'S3 lifecycle rules work in days, not hours, and are too slow for sessions.' },
+      trigger: 'Serverless session store with expiry → DynamoDB + TTL.' },
+    { id: 'P6-23', concept: 'multiaz', domain: 'secure',
+      scenario: 'An existing Amazon RDS for MySQL instance was created without encryption. Compliance now requires encryption at rest. What is the correct procedure?',
+      options: ['Take a snapshot, copy it with encryption enabled using a KMS key, and restore a new encrypted instance from the copy.', 'Enable encryption on the running instance in the console.', 'Enable SSE-S3 on the automated backups.', 'Create an encrypted read replica of the unencrypted instance.'],
+      answer: 0, proof: 'Encryption can only be chosen at creation. The supported path is snapshot → encrypted copy → restore, then switching the application to the new endpoint.',
+      eliminate: { 1: 'Encryption cannot be turned on for an existing instance.', 2: 'RDS backups are not S3 objects you configure.', 3: 'A read replica of an unencrypted instance cannot be encrypted.' },
+      trigger: 'Encrypt an existing RDS instance → snapshot → encrypted copy → restore.' },
+    { id: 'P6-24', type: 'multi', concept: 's3-core', domain: 'cost',
+      scenario: 'A company wants a highly available, low-cost static website on its custom domain, served over HTTPS worldwide, with the bucket kept private. Which TWO components should be used? (Choose TWO.)',
+      options: ['A private S3 bucket as the origin of a CloudFront distribution using origin access control.', 'An ACM certificate (in us-east-1) on the CloudFront distribution, with a Route 53 alias record for the domain.', 'An EC2 web server in an Auto Scaling group.', 'The S3 website endpoint with an HTTPS certificate attached directly.', 'An Application Load Balancer in front of S3.'],
+      answer: [0, 1], proof: 'CloudFront with OAC serves the private bucket worldwide. The ACM certificate (which must be in us-east-1 for CloudFront) gives HTTPS on the custom domain, and the alias record points the domain at the distribution.',
+      eliminate: { 2: 'Servers add cost and operations for static content.', 3: 'S3 website endpoints do not support HTTPS.', 4: 'ALBs cannot use S3 as a target.' },
+      trigger: 'Static site + HTTPS + custom domain → S3 + CloudFront (OAC) + ACM + Route 53 alias.' },
+    { id: 'P6-25', concept: 'analytics', domain: 'performance',
+      scenario: 'IoT devices send telemetry that must be processed in order per device, read by two different consumer applications, and kept for 7 days so it can be reprocessed after bugs are fixed. Which service should be used?',
+      options: ['Amazon Kinesis Data Streams with the device ID as the partition key and extended retention.', 'Amazon SQS standard queue', 'Amazon SNS standard topic', 'Amazon S3 event notifications'],
+      answer: 0, proof: 'A partition key keeps each device\'s records ordered within a shard, several consumers can read the same stream, and retention can be extended (up to 365 days) for replay.',
+      eliminate: { 1: 'SQS deletes messages after consumption, and standard queues do not guarantee order.', 2: 'SNS does not store messages for replay.', 3: 'S3 notifications are not an ordered stream.' },
+      trigger: 'Ordered per key + multiple consumers + replay → Kinesis Data Streams.' },
+  ],
+};
+for (const s of PRACTICE_SETS) s.questions.push(...PRACTICE_EXTRA[s.n]);
+
 const PRACTICE_QUESTIONS = PRACTICE_SETS.flatMap((s) => s.questions);
 
 const QUESTIONS = new Map([...DIAGNOSTIC, ...DRILLS, ...PRACTICE_QUESTIONS].map((q) => [q.id, q]));
@@ -1749,8 +2656,14 @@ function shuffle(arr) {
   return a;
 }
 // A fresh order on every page load: question order per pool, and option order per question.
+// Two diagnostic forms of 20: the first attempt uses Form A, the next Form B, and so on.
+const DIAG_FORMS = {
+  A: DIAGNOSTIC.filter((q) => Number(q.id.slice(1)) <= 20).map((q) => q.id),
+  B: DIAGNOSTIC.filter((q) => Number(q.id.slice(1)) > 20).map((q) => q.id),
+};
 const POOL_ORDER = {
-  diagnostic: shuffle(DIAGNOSTIC.map((q) => q.id)),
+  diagA: shuffle(DIAG_FORMS.A),
+  diagB: shuffle(DIAG_FORMS.B),
   ...Object.fromEntries(PRACTICE_SETS.map((s) => [`set${s.n}`, shuffle(s.questions.map((q) => q.id))])),
 };
 const OPTION_ORDER = new Map();
@@ -1761,7 +2674,10 @@ function optionOrder(q) {
   }
   return OPTION_ORDER.get(q.id);
 }
-const diagQuestion = (pos) => QUESTIONS.get(POOL_ORDER.diagnostic[pos]);
+const diagForm = () => (S.diagnostic.form === 'B' ? 'B' : 'A');
+const diagIds = () => POOL_ORDER[`diag${diagForm()}`];
+const diagSet = () => diagIds().map((id) => QUESTIONS.get(id));
+const diagQuestion = (pos) => QUESTIONS.get(diagIds()[pos]);
 
 /* =====================================================================
    4. STATE + PERSISTENCE (debounced, non-blocking)
@@ -1810,6 +2726,12 @@ function loadState() {
         .sort((a, b) => byCategory[a].c / byCategory[a].n - byCategory[b].c / byCategory[b].n);
     }
     if (s.practice.active && !POOL_ORDER[`set${s.practice.active.set}`]) s.practice.active = null;
+    // Attempts saved by the older lock-in player: keep the answers, drop the lock-in state.
+    if (s.practice.active?.locked) {
+      s.practice.active = { ...s.practice.active, picks: { ...s.practice.active.picks, ...s.practice.active.locked }, flags: {} };
+      delete s.practice.active.locked;
+    }
+    if (['intro', 'replay'].includes(s.practice.mode) && !s.practice.introSet && !s.practice.replay) s.practice.mode = 'list';
     return s;
   } catch { return defaultState(); }
 }
@@ -1988,7 +2910,7 @@ const diagnosticDone = () => !!S.diagnostic.completedAt;
 function go(view) {
   if (!VIEWS[view] || !hasSession()) return;
   S.view = view;
-  if (view === 'diagnostic' && !S.diagnostic.startedAt) S.diagnostic.startedAt = Date.now();
+  if (view === 'diagnostic' && !S.diagnostic.startedAt) { S.diagnostic.startedAt = Date.now(); S.diagnostic.inProgress = true; }
   if (view === 'coach' && !S.drill.currentId) pickNextDrill(false);
   persist(); render();
   window.scrollTo({ top: 0 });
@@ -1996,11 +2918,11 @@ function go(view) {
 }
 
 function submitDiagnostic() {
-  const ans = S.diagnostic.answers;
-  const missing = DIAGNOSTIC.filter((q) => !isAnswered(q, ans[q.id])).length;
-  if (missing) { toast(`Answer all ${DIAGNOSTIC.length} questions — ${missing} left.`, 'error'); return; }
+  const ans = S.diagnostic.answers, form = diagSet();
+  const missing = form.filter((q) => !isAnswered(q, ans[q.id])).length;
+  if (missing) { toast(`Answer all ${form.length} questions — ${missing} left.`, 'error'); return; }
   const byDomain = {}, byConcept = {}, byCategory = {}, items = [];
-  for (const q of DIAGNOSTIC) {
+  for (const q of form) {
     const ok = isCorrect(q, ans[q.id]);
     recordAttempt(q, ans[q.id], 'diagnostic', false);
     for (const [bucket, key] of [[byDomain, q.domain], [byConcept, q.concept], [byCategory, CONCEPT_CATEGORY[q.concept]]]) {
@@ -2013,7 +2935,7 @@ function submitDiagnostic() {
   // Weak categories: below the benchmark, lowest first.
   const weakCategories = Object.keys(byCategory).filter((k) => rate(byCategory[k]) < T).sort((a, b) => rate(byCategory[a]) - rate(byCategory[b]));
   S.baseline = {
-    ts: Date.now(), correct, total: DIAGNOSTIC.length, pct: correct / DIAGNOSTIC.length,
+    ts: Date.now(), correct, total: form.length, pct: correct / form.length, form: diagForm(),
     byDomain, byConcept, byCategory, items, weakCategories,
     stuckDomains: Object.keys(byDomain).filter((k) => rate(byDomain[k]) < T),
     stuckConcepts: Object.keys(byConcept).filter((k) => rate(byConcept[k]) < T),
@@ -2022,8 +2944,9 @@ function submitDiagnostic() {
   for (const k of weakCategories) delete S.remediation.mastered[k];
   S.diagnostic.completedAt = Date.now();
   S.diagnostic.runs = (S.diagnostic.runs || 0) + 1;
+  S.diagnostic.inProgress = false;
   S.drill = { currentId: null, selected: null, evaluated: false, retry: false, recent: [] };
-  track('diagnostic_complete', { scorePct: Math.round(S.baseline.pct * 100), correct, total: DIAGNOSTIC.length, run: S.diagnostic.runs,
+  track('diagnostic_complete', { scorePct: Math.round(S.baseline.pct * 100), correct, total: form.length, run: S.diagnostic.runs,
     weakAreas: weakCategories.map((k) => `${CATEGORIES[k].name} ${Math.round(rate(byCategory[k]) * 100)}%`) });
   checkMilestones();
   toast(weakCategories.length ? 'Baseline captured. Your Personalised Remediation Zone is ready.' : 'Baseline captured. No weak topics — practice exams are unlocked.', 'ok');
@@ -2031,8 +2954,10 @@ function submitDiagnostic() {
 }
 
 function retakeDiagnostic() {
-  if (!confirm('Retake the diagnostic baseline? Your drill history is kept; the baseline snapshot will be replaced when you submit.')) return;
-  S.diagnostic.answers = {}; S.diagnostic.index = 0; S.diagnostic.startedAt = Date.now();
+  const next = diagForm() === 'A' ? 'B' : 'A';
+  if (!confirm(`Retake the diagnostic with a new set of 20 questions (Form ${next})? Your history is kept; the baseline is replaced when you submit.`)) return;
+  S.diagnostic.form = next;
+  S.diagnostic.answers = {}; S.diagnostic.index = 0; S.diagnostic.startedAt = Date.now(); S.diagnostic.inProgress = true;
   persist();
   S.view = 'diagnostic'; render(); window.scrollTo({ top: 0 });
 }
@@ -2263,11 +3188,11 @@ const checkIcon = '<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stro
 
 const STEPS = [
   { view: 'welcome',     n: 1, title: 'Identity',          sub: 'Welcome & identification' },
-  { view: 'diagnostic',  n: 2, title: 'Diagnostic',        sub: `${DIAGNOSTIC.length}-question shuffled baseline` },
+  { view: 'diagnostic',  n: 2, title: 'Diagnostic',        sub: '20 questions · new set on retake' },
   { view: 'analytics',   n: 3, title: 'Analytics Hub',     sub: 'Weakness heatmap & blind spots' },
   { view: 'remediation', n: 4, title: 'Remediation Zone',  sub: 'Step-by-step weak-topic fixes' },
   { view: 'coach',       n: 5, title: 'Coaching Core',     sub: 'Drills, tutor & masterclasses' },
-  { view: 'practice',    n: 6, title: 'Practice Exams',    sub: '6 exam-style test sets' },
+  { view: 'practice',    n: 6, title: 'Practice Exams',    sub: '6 exams × 25 questions, timed' },
   { view: 'result',      n: 7, title: 'Final Result',      sub: 'Certification readiness score' },
   { view: 'selfheal',    n: 8, title: 'Self-Healing Security', sub: 'Master module: auto-remediation' },
 ];
@@ -2339,8 +3264,8 @@ function viewWelcome() {
           </div>
         </div>
         <div class="mt-6 rounded-xl border border-amber-300/60 bg-amber-50 p-4 text-sm leading-relaxed text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
-          <b>Your path to exam day.</b> Take the ${DIAGNOSTIC.length}-question shuffled diagnostic, fix your weakest categories in the
-          Remediation Zone, then work through six exam-style practice sets. Your Certification Readiness Score combines all three.
+          <b>Your path to exam day.</b> Take the 20-question diagnostic (a different 20 each time you retake it), learn your weak concepts
+          in the Remediation Zone, then sit six full 25-question practice exams under real exam conditions. Your Certification Readiness Score combines all three.
         </div>
         <ol class="mt-6 grid gap-3 sm:grid-cols-2">
           ${STEPS.map((s) => {
@@ -2462,19 +3387,36 @@ function eliminationList(q, skin = 'card') {
     <span class="leading-relaxed">${esc(text)}</span></li>`).join('')}</ul>`;
 }
 
+/** Shown after a diagnostic is submitted: the result, and a retake that uses the other form. */
+function diagnosticDonePanel() {
+  const b = S.baseline, next = diagForm() === 'A' ? 'B' : 'A';
+  const weak = weakTopics();
+  return `<section class="${ui.card} mx-auto max-w-2xl text-center sm:p-8 fade-in">
+    <div class="${ui.label} !text-amber-600 dark:!text-amber-400">Phase 2 · Diagnostic complete${b?.form ? ` · Form ${b.form}` : ''}</div>
+    <div class="mt-3 flex justify-center">${ring(b.pct, b.pct >= T ? 'emerald' : 'rose', 'h-32 w-32')}</div>
+    <p class="mt-3 text-sm ${ui.muted}">${b.correct}/${b.total} correct${weak.length ? ` · weak: ${weak.map((k) => CATEGORIES[k].name).join(', ')}` : ' · no weak categories'}</p>
+    <div class="mt-6 flex flex-wrap justify-center gap-2">
+      <button data-action="nav" data-view="remediation" class="${B('primary')}">${weak.length ? 'Learn your weak concepts →' : 'Open the Remediation Zone →'}</button>
+      <button data-action="retake" class="${B('secondary')}">Retake with 20 new questions (Form ${next})</button>
+    </div>
+    <p class="mt-3 text-xs ${ui.muted}">Each retake switches between two different sets of 20 questions, shuffled in a new order.</p>
+  </section>`;
+}
+
 function viewDiagnostic() {
-  const d = S.diagnostic, n = DIAGNOSTIC.length;
+  if (diagnosticDone() && !S.diagnostic.inProgress) return diagnosticDonePanel();
+  const d = S.diagnostic, set = diagSet(), n = set.length;
   d.index = Math.min(Math.max(0, Number(d.index) || 0), n - 1);
   const q = diagQuestion(d.index);
-  const answered = DIAGNOSTIC.filter((x) => isAnswered(x, d.answers[x.id])).length;
+  const answered = set.filter((x) => isAnswered(x, d.answers[x.id])).length;
   const last = d.index === n - 1;
   const cat = CATEGORIES[CONCEPT_CATEGORY[q.concept]];
   return `
   <div class="mb-5 flex flex-wrap items-end justify-between gap-3">
     <div>
-      <div class="${ui.label} !text-amber-600 dark:!text-amber-400">Phase 2 · Shuffled diagnostic test${d.runs ? ` · retake #${d.runs + 1}` : ''}</div>
+      <div class="${ui.label} !text-amber-600 dark:!text-amber-400">Phase 2 · Diagnostic test · Form ${diagForm()}${d.runs ? ` · attempt #${d.runs + 1}` : ''}</div>
       <h1 class="text-2xl font-bold">Map your blind spots</h1>
-      <p class="text-sm ${ui.muted}">No feedback until you submit. Questions and choices are reshuffled every time the page loads, so answer from understanding, not position.</p>
+      <p class="text-sm ${ui.muted}">Pick one answer, or two where it says "Choose TWO". No feedback until you submit. Questions and choices are shuffled, so answer from understanding, not position.</p>
     </div>
     <div class="text-right text-sm"><div class="font-mono text-lg font-bold"><span id="diag-count">${answered}</span>/${n}</div><div class="${ui.muted} text-xs">answered</div></div>
   </div>
@@ -2502,7 +3444,7 @@ function viewDiagnostic() {
     <aside class="${ui.card} h-fit lg:sticky lg:top-24">
       <div class="${ui.label}">Baseline map</div>
       <div class="mt-3 grid grid-cols-5 gap-2">
-        ${POOL_ORDER.diagnostic.map((id, i) => {
+        ${diagIds().map((id, i) => {
           const done = isAnswered(QUESTIONS.get(id), d.answers[id]);
           return `<button data-action="diag-goto" data-index="${i}" aria-label="Question ${i + 1}${done ? ', answered' : ''}"
           class="h-10 rounded-lg border text-sm font-semibold ${done ? 'border-slate-700 bg-slate-700 text-white dark:border-slate-300 dark:bg-slate-200 dark:text-slate-900' : 'border-slate-300 text-slate-600 dark:border-slate-600 dark:text-slate-300'} ${i === d.index ? 'ring-2 ring-amber-500 ring-offset-2 ring-offset-white dark:ring-offset-slate-800' : ''}">${i + 1}</button>`;
@@ -2511,7 +3453,7 @@ function viewDiagnostic() {
       <div class="mt-5 space-y-2 text-xs ${ui.muted}">
         <div class="${ui.label}">Coverage</div>
         ${CATEGORY_KEYS.map((k) => {
-          const qs = DIAGNOSTIC.filter((x) => CONCEPT_CATEGORY[x.concept] === k);
+          const qs = set.filter((x) => CONCEPT_CATEGORY[x.concept] === k);
           const done = qs.filter((x) => isAnswered(x, d.answers[x.id])).length;
           return `<div class="flex items-center justify-between gap-2"><span>${CATEGORIES[k].name}</span><span class="font-mono">${done}/${qs.length}</span></div>`;
         }).join('')}
@@ -3229,6 +4171,41 @@ function remediationCard(k, required) {
   </article>`;
 }
 
+/** Every concept missed on the latest diagnostic, explained briefly in plain language. */
+function weakConceptsBrief() {
+  const b = S.baseline;
+  if (!b) return '';
+  const missed = [...new Set((b.items || []).filter((i) => !i.correct).map((i) => QUESTIONS.get(i.qid)?.concept).filter(Boolean))];
+  if (!missed.length) return '';
+  return `<section class="${ui.card} mb-6 sm:p-7">
+    <div class="flex flex-wrap items-end justify-between gap-2">
+      <div><div class="${ui.label} !text-rose-600 dark:!text-rose-400">From your diagnostic</div>
+        <h2 class="text-lg font-bold">Your weak concepts at a glance (${missed.length})</h2>
+        <p class="text-sm ${ui.muted}">You missed at least one question on each of these. Read the short explanation, then open the full masterclass or practise it.</p></div>
+    </div>
+    <div class="mt-4 grid gap-4 lg:grid-cols-2">
+      ${missed.map((cid) => {
+        const c = CONCEPTS[cid], t = b.byConcept?.[cid];
+        const wrongQ = (b.items || []).filter((i) => !i.correct && QUESTIONS.get(i.qid)?.concept === cid).map((i) => QUESTIONS.get(i.qid));
+        return `<article class="rounded-xl border border-rose-300/50 p-4 dark:border-rose-500/30">
+          <div class="flex items-start justify-between gap-2">
+            <div><h3 class="font-bold">${esc(c.name)}</h3><div class="text-xs ${ui.muted}">${esc(CATEGORIES[CONCEPT_CATEGORY[cid]].name)} · ${c.services.slice(0, 3).map(esc).join(' · ')}</div></div>
+            ${t ? `<span class="shrink-0 rounded-full bg-rose-600 px-2 py-0.5 font-mono text-xs font-bold text-white">${t.c}/${t.n}</span>` : ''}
+          </div>
+          <p class="mt-2 text-sm leading-relaxed">${esc(c.summary)}</p>
+          <ul class="mt-2 list-disc space-y-1 pl-5 text-sm leading-relaxed ${ui.muted}">${c.facts.slice(0, 3).map((f) => `<li>${esc(f)}</li>`).join('')}</ul>
+          ${c.traps?.[0] ? `<p class="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-900 dark:bg-rose-500/10 dark:text-rose-200"><b>Common trap:</b> ${esc(c.traps[0])}</p>` : ''}
+          ${wrongQ.map((q) => `<p class="mt-2 text-xs leading-relaxed ${ui.muted}"><b class="text-slate-700 dark:text-slate-200">Correct answer you missed:</b> ${esc(keyText(q, 140))}. <i>${esc(q.trigger || '')}</i></p>`).join('')}
+          <div class="mt-3 flex flex-wrap gap-2">
+            <button data-action="open-drawer" data-concept="${cid}" class="${B('secondary', '!px-3 !py-1.5 text-xs')}">Full masterclass</button>
+            ${DRILLS.some((q) => q.concept === cid) ? `<button data-action="drill-concept" data-concept="${cid}" class="${B('ghost', '!px-3 !py-1.5 text-xs')}">Practise it →</button>` : ''}
+          </div>
+        </article>`;
+      }).join('')}
+    </div>
+  </section>`;
+}
+
 function viewRemediation() {
   if (!diagnosticDone()) return lockedPanel('Phase 3 · Remediation Zone', 'Your remediation plan is built from your diagnostic', 'Take the diagnostic test first. Your weakest categories will then be broken down here step by step.', 'Start the diagnostic', 'diagnostic');
   const weak = weakTopics(), others = CATEGORY_KEYS.filter((k) => !weak.includes(k));
@@ -3263,6 +4240,8 @@ function viewRemediation() {
     </div>
   </section>
 
+  ${weakConceptsBrief()}
+
   <div class="space-y-6">${weak.map((k) => remediationCard(k, true)).join('')}</div>
 
   <section class="mt-6 rounded-2xl border p-5 text-center ${unlocked ? 'border-emerald-400/60 bg-emerald-50 dark:bg-emerald-500/10' : 'border-amber-300/60 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/10'}">
@@ -3282,23 +4261,40 @@ function viewRemediation() {
   </details>`).join('')}</div>` : ''}`;
 }
 
-/* ---------- Phase 4: six YouTube-styled practice test sets ---------- */
+/* ---------- Phase 4: six full-length practice exams under real exam conditions ---------- */
 const SECONDS_PER_QUESTION = 120;   // real exam pace: 130 minutes for 65 questions
 const fmtClock = (ms) => { const s = Math.max(0, Math.floor(ms / 1000)); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
   return `${h ? `${h}:${String(m).padStart(2, '0')}` : m}:${String(r).padStart(2, '0')}`; };
 const setById = (n) => PRACTICE_SETS.find((s) => s.n === Number(n));
 const setOrder = (n) => POOL_ORDER[`set${n}`];
+const examLimitMs = (n) => setById(n).questions.length * SECONDS_PER_QUESTION * 1000;
 const practiceQ = () => { const a = S.practice.active; return a && QUESTIONS.get(setOrder(a.set)[a.index]); };
+const replayQ = () => { const r = S.practice.replay; return r && QUESTIONS.get(setOrder(r.set)[r.index]); };
+const answeredIds = (a) => setOrder(a.set).filter((id) => isAnswered(QUESTIONS.get(id), a.picks[id]));
+const practiceVideo = (n) => CONFIG.practiceVideos?.[n] || '';
+const scaledScore = (pct) => Math.max(100, Math.round(pct * 1000));
 const THUMBS = ['from-rose-700 via-slate-900 to-slate-950', 'from-sky-700 via-slate-900 to-slate-950', 'from-violet-700 via-slate-900 to-slate-950',
   'from-emerald-700 via-slate-900 to-slate-950', 'from-amber-600 via-slate-900 to-slate-950', 'from-fuchsia-700 via-slate-900 to-slate-950'];
-let explainOpen = false;   // transient: the slide-out explanation pane
+let explainOpen = false;   // transient: the slide-out explanation pane (review mode)
 
 function viewPractice() {
   if (!practiceUnlocked()) return lockedPanel('Phase 4 · Practice Exams', 'Practice exams are locked', practiceLockReason(), diagnosticDone() ? 'Open the Remediation Zone' : 'Start the diagnostic', diagnosticDone() ? 'remediation' : 'diagnostic');
   const P = S.practice;
-  if (P.mode === 'play' && P.active) return practicePlayer();
+  if (P.mode === 'play' && P.active) return practicePlayer('exam');
+  if (P.mode === 'review' && P.active) return examReviewGrid();
+  if (P.mode === 'replay' && P.replay && P.results[P.replay.set]) return practicePlayer('replay');
+  if (P.mode === 'intro' && setById(P.introSet)) return practiceIntro(P.introSet);
   if (P.mode === 'summary' && P.results[P.summarySet]) return practiceSummary(P.summarySet);
   return practiceList();
+}
+
+function videoEmbed(n, cls = '') {
+  const url = practiceVideo(n), src = url && youtubeEmbed(url);
+  if (!src) return '';
+  return `<div class="${cls}"><div class="${ui.label} mb-2">Video walkthrough</div>
+    <div class="aspect-video overflow-hidden rounded-xl bg-black ring-1 ring-black/30">
+      <iframe class="h-full w-full" src="${esc(src)}" title="Practice Exam ${n} video walkthrough" loading="lazy"
+        allow="accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div></div>`;
 }
 
 function practiceList() {
@@ -3306,37 +4302,39 @@ function practiceList() {
   return `
   <div class="mb-6 flex flex-wrap items-end justify-between gap-3">
     <div>
-      <div class="${ui.label} !text-amber-600 dark:!text-amber-400">Phase 4 · Practice Exams</div>
-      <h1 class="text-2xl font-bold">Six SAA-C03 practice test sets</h1>
-      <p class="text-sm ${ui.muted}">Exam-style scenarios at real exam pace (2 minutes per question). Lock in each answer, then open the explanation pane for the full breakdown.</p>
+      <div class="${ui.label} !text-amber-600 dark:!text-amber-400">Phase 4 · Final practice exams</div>
+      <h1 class="text-2xl font-bold">Six full SAA-C03 practice exams</h1>
+      <p class="text-sm ${ui.muted}">Each exam: 25 scenario questions · 50-minute countdown · flag & review · no answers until you submit · scaled score 100–1000, pass mark 720, just like the real exam.</p>
     </div>
-    <div class="text-right"><div class="font-mono text-lg font-bold">${setsDone()}/${PRACTICE_SETS.length}</div><div class="text-xs ${ui.muted}">sets completed</div></div>
+    <div class="text-right"><div class="font-mono text-lg font-bold">${setsDone()}/${PRACTICE_SETS.length}</div><div class="text-xs ${ui.muted}">exams completed</div></div>
   </div>
   <div class="grid gap-x-5 gap-y-8 sm:grid-cols-2 xl:grid-cols-3">
     ${PRACTICE_SETS.map((s, i) => {
       const r = P.results[s.n], live = P.active?.set === s.n;
-      const answered = live ? Object.keys(P.active.locked).length : 0;
+      const answered = live ? answeredIds(P.active).length : 0;
       const progress = r ? 1 : live ? answered / s.questions.length : 0;
-      const status = live ? `In progress · ${answered}/${s.questions.length}` : r ? `Score ${Math.round(r.pct * 100)}% · best ${Math.round(r.best * 100)}%` : 'Not started';
+      const status = live ? `In progress · ${answered}/${s.questions.length} answered`
+        : r ? `${r.scaled ?? scaledScore(r.pct)}/1000 · ${(r.passed ?? r.pct >= T) ? 'PASS' : 'FAIL'} · best ${Math.round(r.best * 100)}%` : 'Not started';
       return `<button type="button" data-action="practice-open" data-set="${s.n}" class="group text-left focus:outline-none">
         <div class="relative aspect-video overflow-hidden rounded-xl bg-gradient-to-br ${THUMBS[i % THUMBS.length]} shadow-md ring-1 ring-black/20 transition group-hover:shadow-xl group-focus-visible:ring-2 group-focus-visible:ring-amber-500">
           <div class="absolute inset-0 flex flex-col justify-center px-6 text-white">
             <div class="text-[11px] font-bold uppercase tracking-[.2em] text-white/70">AWS SAA-C03 · Practice exam</div>
-            <div class="mt-1 text-3xl font-extrabold leading-none sm:text-4xl">SET ${s.n}<span class="text-white/50">/6</span></div>
+            <div class="mt-1 text-3xl font-extrabold leading-none sm:text-4xl">EXAM ${s.n}<span class="text-white/50">/6</span></div>
             <div class="mt-2 max-w-[85%] text-sm font-semibold text-white/90">${esc(s.title)}</div>
           </div>
           <img src="${esc(logoSrc())}" alt="" class="absolute right-4 top-4 h-10 w-auto max-w-[64px] object-contain opacity-90">
           <span class="absolute inset-0 m-auto flex h-14 w-20 items-center justify-center rounded-2xl bg-red-600/95 opacity-0 shadow-lg transition group-hover:opacity-100" aria-hidden="true">
             <svg class="h-7 w-7 text-white" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
-          <span class="absolute bottom-2.5 right-2.5 rounded bg-black/80 px-1.5 py-0.5 font-mono text-xs font-semibold text-white">${fmtClock(s.questions.length * SECONDS_PER_QUESTION * 1000)}</span>
+          ${practiceVideo(s.n) ? '<span class="absolute left-2.5 top-2.5 rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">▶ Video</span>' : ''}
+          <span class="absolute bottom-2.5 right-2.5 rounded bg-black/80 px-1.5 py-0.5 font-mono text-xs font-semibold text-white">${fmtClock(examLimitMs(s.n))}</span>
           ${progress ? `<span class="absolute inset-x-0 bottom-0 h-1 bg-white/25"><span class="block h-full bg-red-600" style="width:${Math.round(progress * 100)}%"></span></span>` : ''}
         </div>
         <div class="mt-3 flex gap-3">
           <img src="${esc(logoSrc())}" alt="" class="h-9 w-9 shrink-0 rounded-full bg-slate-900 object-contain p-1">
           <div class="min-w-0">
-            <div class="font-semibold leading-snug group-hover:text-amber-600 dark:group-hover:text-amber-400">Practice Set ${s.n}: ${esc(s.title)}</div>
+            <div class="font-semibold leading-snug group-hover:text-amber-600 dark:group-hover:text-amber-400">Practice Exam ${s.n}: ${esc(s.title)}</div>
             <div class="mt-0.5 text-xs ${ui.muted}">${esc(CONFIG.ownerName)} · ${s.questions.length} questions · ${esc(s.blurb)}</div>
-            <div class="mt-0.5 text-xs font-semibold ${r ? (r.pct >= T ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400') : live ? 'text-red-600 dark:text-red-400' : ui.muted}">${status}</div>
+            <div class="mt-0.5 text-xs font-semibold ${r ? ((r.passed ?? r.pct >= T) ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400') : live ? 'text-red-600 dark:text-red-400' : ui.muted}">${status}</div>
           </div>
         </div>
       </button>`;
@@ -3345,13 +4343,43 @@ function practiceList() {
   ${setsDone() === PRACTICE_SETS.length ? `<div class="mt-8 text-center"><button data-action="nav" data-view="result" class="${B('primary')}">See your Certification Readiness Score →</button></div>` : ''}`;
 }
 
-/** Per-question countdown: 2:00 budget per question, then overtime in red. Frozen once the answer is locked. */
+/** Exam rules screen shown before an attempt starts. */
+function practiceIntro(n) {
+  const s = setById(n), r = S.practice.results[n], other = S.practice.active && S.practice.active.set !== n ? S.practice.active.set : null;
+  const rules = [
+    ['📝', `${s.questions.length} scenario questions`, 'Single answer from 4 options, or "Choose TWO" from 5 options, as on the real exam.'],
+    ['⏱️', `${fmtClock(examLimitMs(n))} countdown`, 'Real exam pace (about 2 minutes per question). The exam submits itself when time runs out.'],
+    ['⚑', 'Flag & review', 'Mark questions for review and change any answer until you submit.'],
+    ['🙈', 'No feedback until you submit', 'Like the real exam, answers and explanations are revealed only after submission.'],
+    ['🏁', 'Scaled score 100–1000', 'Pass mark 720. Unanswered questions count as incorrect.'],
+  ];
+  return `
+  <div class="mb-4"><button data-action="practice-list" class="${B('ghost', '!px-2 text-sm')}">← All practice exams</button></div>
+  <section class="${ui.card} mx-auto max-w-3xl sm:p-8">
+    <div class="${ui.label} !text-amber-600 dark:!text-amber-400">Practice Exam ${n} of ${PRACTICE_SETS.length}</div>
+    <h1 class="mt-1 text-2xl font-bold">${esc(s.title)}</h1>
+    <p class="mt-1 text-sm ${ui.muted}">${esc(s.blurb)}${r ? ` · previous best ${Math.round(r.best * 100)}% (${scaledScore(r.best)}/1000)` : ''}</p>
+    <ul class="mt-5 grid gap-3 sm:grid-cols-2">${rules.map(([icon, t, d]) => `<li class="flex gap-3 rounded-xl border border-slate-200 p-3 text-sm dark:border-slate-700">
+      <span class="text-xl" aria-hidden="true">${icon}</span><span><b class="block">${t}</b><span class="${ui.muted}">${d}</span></span></li>`).join('')}</ul>
+    ${videoEmbed(n, 'mt-6')}
+    ${other ? `<p class="mt-5 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">Exam ${other} is still in progress. Starting this exam will discard it.</p>` : ''}
+    <div class="mt-6 flex flex-wrap gap-2">
+      <button data-action="practice-start" data-set="${n}" class="${B('primary', 'px-6')}">▶ Start exam</button>
+      <button data-action="practice-list" class="${B('secondary')}">Not now</button>
+    </div>
+  </section>`;
+}
+
+/** Pace indicator for the current question (2:00 suggested), shown alongside the exam countdown. */
 function qClock(a, q) {
   const budget = SECONDS_PER_QUESTION * 1000, spent = a.qTime?.[q.id] || 0, left = budget - spent;
   const pctLeft = Math.max(0, Math.min(100, (left / budget) * 100));
-  if (a.locked[q.id] !== undefined) return { text: `✓ ${fmtClock(spent)}`, cls: 'bg-white/10 text-slate-300', bar: 'bg-slate-500', pct: pctLeft };
-  if (left <= 0) return { text: `Time's up +${fmtClock(-left)}`, cls: 'bg-rose-600 text-white', bar: 'bg-rose-500', pct: 0 };
+  if (left <= 0) return { text: `+${fmtClock(-left)}`, cls: 'bg-rose-600 text-white', bar: 'bg-rose-500', pct: 0 };
   return { text: fmtClock(left + 999), cls: left < 30000 ? 'bg-amber-500 text-slate-900' : 'bg-white/10 text-white', bar: left < 30000 ? 'bg-amber-400' : 'bg-red-600', pct: pctLeft };
+}
+function examClock(a) {
+  const left = examLimitMs(a.set) - a.elapsedMs;
+  return { text: fmtClock(left + 999), cls: left < 60000 ? 'bg-rose-600 text-white' : left < 300000 ? 'bg-amber-500 text-slate-900' : 'bg-white/10 text-white' };
 }
 
 /** Every option marked correct or incorrect, with the reason, in the order the learner saw them. */
@@ -3359,7 +4387,7 @@ function answerBreakdown(q, resp) {
   if (qType(q) === 'fill') {
     const ok = isCorrect(q, resp);
     return `<ul class="mt-2 space-y-2">
-      <li class="rounded-lg bg-emerald-500/10 px-3 py-2"><b class="text-emerald-400">✓ Expected:</b> ${esc(q.key)} <span class="text-slate-400">(also accepted: ${esc(q.accept.join(', '))})</span></li>
+      <li class="rounded-lg bg-emerald-500/10 px-3 py-2"><b class="text-emerald-400">✓ Expected:</b> ${esc(q.key)}</li>
       <li class="rounded-lg ${ok ? 'bg-emerald-500/10' : 'bg-rose-500/10'} px-3 py-2"><b class="${ok ? 'text-emerald-400' : 'text-rose-400'}">${ok ? '✓' : '✗'} Your answer:</b> ${esc(responseText(q, resp, 80))}</li></ul>`;
   }
   const keySet = qType(q) === 'multi' ? q.answer : [q.answer];
@@ -3374,126 +4402,191 @@ function answerBreakdown(q, resp) {
   }).join('')}</ul>`;
 }
 
-function practicePlayer() {
-  const a = S.practice.active, s = setById(a.set), order = setOrder(a.set), q = practiceQ();
-  const target = s.questions.length * SECONDS_PER_QUESTION * 1000;
-  const lockedResp = a.locked[q.id], isLocked = lockedResp !== undefined;
-  const resp = isLocked ? lockedResp : a.picks[q.id];
-  const ok = isLocked && isCorrect(q, lockedResp);
-  const lockedCount = Object.keys(a.locked).length, correctCount = order.filter((id) => a.locked[id] !== undefined && isCorrect(QUESTIONS.get(id), a.locked[id])).length;
-  const allLocked = lockedCount === order.length, last = a.index === order.length - 1;
+/**
+ * The YouTube-styled player.
+ * mode 'exam'   — live attempt: answers editable, flags, countdown, nothing revealed.
+ * mode 'replay' — after submission: answers revealed, slide-out explanation canvas.
+ */
+function practicePlayer(mode) {
+  const exam = mode === 'exam';
+  const P = S.practice, a = exam ? P.active : null, rp = exam ? null : P.replay;
+  const n = exam ? a.set : rp.set, s = setById(n), order = setOrder(n), index = exam ? a.index : rp.index;
+  const q = QUESTIONS.get(order[index]);
+  const result = exam ? null : P.results[n];
+  const resp = exam ? a.picks[q.id] : result.answers?.[q.id];
+  const ok = !exam && isCorrect(q, resp);
+  const last = index === order.length - 1;
+  const answeredCount = exam ? answeredIds(a).length : null;
+  const flaggedCount = exam ? order.filter((id) => a.flags?.[id]).length : 0;
   const ctl = 'inline-flex h-9 items-center justify-center gap-1.5 rounded-full px-3 text-sm font-semibold text-white/90 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-35 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500';
+  const segState = (id, i) => {
+    if (exam) {
+      if (i === index) return 'bg-red-600';
+      if (a.flags?.[id]) return 'bg-amber-400';
+      return isAnswered(QUESTIONS.get(id), a.picks[id]) ? 'bg-white/70' : 'bg-white/20 hover:bg-white/40';
+    }
+    const qq = QUESTIONS.get(id), r = result.answers?.[id];
+    return isAnswered(qq, r) && isCorrect(qq, r) ? 'bg-emerald-500' : 'bg-rose-500';
+  };
+  const qc = exam ? qClock(a, q) : null, ec = exam ? examClock(a) : null;
   return `
   <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-    <button data-action="practice-list" class="${B('ghost', '!px-2 text-sm')}">← All practice sets</button>
-    <div class="flex flex-wrap gap-2">${chip(`Set ${s.n}/6 · ${s.title}`)}${chip(`${correctCount}/${lockedCount} correct so far`, '!bg-emerald-100 !text-emerald-800 dark:!bg-emerald-500/15 dark:!text-emerald-300')}</div>
+    ${exam ? `<button data-action="practice-review" class="${B('ghost', '!px-2 text-sm')}">☰ Review all questions</button>`
+      : `<button data-action="practice-summary" data-set="${n}" class="${B('ghost', '!px-2 text-sm')}">← Back to results</button>`}
+    <div class="flex flex-wrap gap-2">${chip(`Exam ${n}/6 · ${s.title}`)}${exam
+      ? chip(`${answeredCount}/${order.length} answered${flaggedCount ? ` · ⚑ ${flaggedCount}` : ''}`, '!bg-sky-100 !text-sky-800 dark:!bg-sky-500/15 dark:!text-sky-300')
+      : chip('Review mode · answers revealed', '!bg-emerald-100 !text-emerald-800 dark:!bg-emerald-500/15 dark:!text-emerald-300')}</div>
   </div>
   <div class="grid gap-6 xl:grid-cols-[1fr_300px]">
     <section class="relative overflow-hidden rounded-2xl bg-[#0f0f0f] text-slate-100 shadow-2xl ring-1 ring-black/40" aria-label="Practice exam player">
       <header class="flex items-center gap-3 border-b border-white/10 px-4 py-3 sm:px-6">
         <img src="${esc(logoSrc())}" alt="" class="h-9 w-9 shrink-0 rounded-full bg-black object-contain p-1 ring-1 ring-white/10">
         <div class="min-w-0 flex-1">
-          <div class="truncate text-sm font-semibold">AWS SAA-C03 Practice Set ${s.n}: ${esc(s.title)}</div>
-          <div class="text-xs text-slate-400">${esc(CONFIG.ownerName)} · Question ${a.index + 1} of ${order.length}</div>
+          <div class="truncate text-sm font-semibold">AWS SAA-C03 Practice Exam ${n}: ${esc(s.title)}</div>
+          <div class="text-xs text-slate-400">${esc(CONFIG.ownerName)} · Question ${index + 1} of ${order.length}</div>
         </div>
-        <div class="flex shrink-0 flex-col items-end gap-1">
-          <div id="yt-qclock" class="flex items-center gap-2 rounded-full px-3 py-1.5 font-mono text-sm font-bold tabular-nums ${qClock(a, q).cls}" title="Time left for this question (${fmtClock(SECONDS_PER_QUESTION * 1000)} each, real exam pace)">
-            <span class="h-2 w-2 animate-pulse rounded-full bg-red-500" aria-hidden="true"></span><span id="yt-qtime">${qClock(a, q).text}</span>
+        ${exam ? `<div class="flex shrink-0 flex-col items-end gap-1">
+          <div id="yt-clock" class="flex items-center gap-2 rounded-full px-3 py-1.5 font-mono text-sm font-bold tabular-nums ${ec.cls}" title="Exam time remaining; the exam submits itself at 0:00">
+            <span class="h-2 w-2 animate-pulse rounded-full bg-red-500" aria-hidden="true"></span><span id="yt-time">${ec.text}</span><span class="text-[10px] font-semibold opacity-70">left</span>
           </div>
-          <div class="font-mono text-[11px] text-slate-400" title="Total time on this set">Set <span id="yt-time">${fmtClock(a.elapsedMs)}</span> / ${fmtClock(target)}</div>
-        </div>
+          <div class="font-mono text-[11px] text-slate-400" title="Suggested pace: 2:00 per question">This question <span id="yt-qtime" class="rounded px-1 ${qc.cls}">${qc.text}</span></div>
+        </div>` : `<div class="rounded-full px-3 py-1.5 text-sm font-bold ${ok ? 'bg-emerald-500/15 text-emerald-300' : 'bg-rose-500/15 text-rose-300'}">${ok ? '✓ Correct' : isAnswered(q, resp) ? '✗ Incorrect' : '— Unanswered'}</div>`}
       </header>
-      <div class="h-1 bg-white/10" aria-hidden="true"><div id="yt-qbar" class="h-full transition-[width] duration-1000 ease-linear ${qClock(a, q).bar}" style="width:${qClock(a, q).pct}%"></div></div>
+      ${exam ? `<div class="h-1 bg-white/10" aria-hidden="true"><div id="yt-qbar" class="h-full transition-[width] duration-1000 ease-linear ${qc.bar}" style="width:${qc.pct}%"></div></div>` : ''}
 
       <div class="mx-auto min-h-[420px] max-w-3xl px-5 py-8 sm:px-10 sm:py-10 fade-in">
         <div class="flex flex-wrap items-center justify-center gap-2 text-[11px] font-bold uppercase tracking-wider">
-          <span class="rounded bg-red-600 px-2 py-0.5 text-white">Q${a.index + 1}</span>
+          <span class="rounded bg-red-600 px-2 py-0.5 text-white">Q${index + 1}</span>
           <span class="rounded bg-white/10 px-2 py-0.5 text-slate-300">${typeLabel(q)}</span>
           <span class="rounded bg-white/10 px-2 py-0.5 text-slate-300">${DOMAINS[q.domain].short}</span>
+          ${exam && a.flags?.[q.id] ? '<span class="rounded bg-amber-400 px-2 py-0.5 text-slate-900">⚑ Flagged</span>' : ''}
         </div>
         <p class="mt-5 text-center text-xl font-semibold leading-relaxed text-white sm:text-2xl sm:leading-relaxed">${esc(q.scenario)}</p>
-        ${answerInputs(q, resp, 'prac', { reveal: isLocked, skin: 'stage' })}
-        ${isLocked ? `<div class="mt-5 flex flex-wrap items-center gap-3 rounded-xl px-4 py-3 ${ok ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'}">
-          <span class="text-lg font-bold">${ok ? '✓ Correct' : '✗ Incorrect'}</span>
+        ${answerInputs(q, resp, 'prac', { reveal: !exam, skin: 'stage' })}
+        ${!exam ? `<div class="mt-5 flex flex-wrap items-center gap-3 rounded-xl px-4 py-3 ${ok ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'}">
+          <span class="text-lg font-bold">${ok ? '✓ Correct' : isAnswered(q, resp) ? '✗ Incorrect' : '— Not answered'}</span>
           <button data-action="practice-explain" class="ml-auto text-sm font-semibold text-white underline-offset-4 hover:underline">${explainOpen ? 'Hide' : 'Open'} explanation →</button>
         </div>` : ''}
       </div>
 
-      <!-- Scrubber: one segment per question -->
+      <!-- Timeline: one segment per question -->
       <div class="flex gap-1 px-4 sm:px-6" role="group" aria-label="Question timeline">
-        ${order.map((id, i) => {
-          const l = a.locked[id], c = l !== undefined ? (isCorrect(QUESTIONS.get(id), l) ? 'bg-emerald-500' : 'bg-rose-500') : i === a.index ? 'bg-red-600' : 'bg-white/20 hover:bg-white/40';
-          return `<button data-action="practice-goto" data-index="${i}" aria-label="Question ${i + 1}${l !== undefined ? ', answered' : ''}" class="h-1.5 flex-1 rounded-full transition ${c} ${i === a.index ? 'scale-y-[2]' : ''}"></button>`;
-        }).join('')}
+        ${order.map((id, i) => `<button data-action="${exam ? 'practice-goto' : 'replay-goto'}" data-index="${i}" aria-label="Question ${i + 1}" class="h-1.5 flex-1 rounded-full transition ${segState(id, i)} ${i === index ? 'scale-y-[2]' : ''}"></button>`).join('')}
       </div>
       <div class="flex flex-wrap items-center gap-1 px-2 py-2 sm:px-4">
-        <button data-action="practice-prev" class="${ctl}" ${a.index === 0 ? 'disabled' : ''} aria-label="Previous question"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zM9.5 12 18 18V6z"/></svg></button>
-        ${isLocked
-          ? `<button data-action="${last ? (allLocked ? 'practice-finish' : 'practice-next-open') : 'practice-next'}" class="${ctl} !bg-white !text-slate-900 hover:!bg-slate-200">${last ? (allLocked ? 'Finish set' : 'Next unanswered') : 'Next question'} ▶</button>`
-          : `<button id="yt-lock" data-action="practice-lock" class="${ctl} !bg-red-600 hover:!bg-red-500" ${isAnswered(q, resp) ? '' : 'disabled'}><svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> Lock answer</button>`}
-        <button data-action="practice-next" class="${ctl}" ${last ? 'disabled' : ''} aria-label="Next question"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg></button>
-        <span class="ml-2 font-mono text-xs text-slate-400">${lockedCount}/${order.length} answered</span>
+        <button data-action="${exam ? 'practice-prev' : 'replay-prev'}" class="${ctl}" ${index === 0 ? 'disabled' : ''} aria-label="Previous question"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zM9.5 12 18 18V6z"/></svg></button>
+        ${exam
+          ? `<button data-action="practice-flag" class="${ctl} ${a.flags?.[q.id] ? '!bg-amber-400 !text-slate-900' : ''}" aria-pressed="${!!a.flags?.[q.id]}">⚑ ${a.flags?.[q.id] ? 'Flagged' : 'Flag for review'}</button>
+             ${last ? `<button data-action="practice-review" class="${ctl} !bg-white !text-slate-900 hover:!bg-slate-200">Review answers ▶</button>`
+               : `<button data-action="practice-next" class="${ctl} !bg-red-600 hover:!bg-red-500">Next ▶</button>`}`
+          : `<button data-action="replay-next" class="${ctl} !bg-white !text-slate-900 hover:!bg-slate-200" ${last ? 'disabled' : ''}>Next ▶</button>`}
+        <span class="ml-2 font-mono text-xs text-slate-400">${exam ? `${answeredCount}/${order.length} answered` : `${result.correct}/${result.total} correct`}</span>
         <span class="flex-1"></span>
-        <button data-action="practice-explain" class="${ctl}" ${isLocked ? '' : 'disabled title="Lock in an answer to unlock the explanation"'} aria-pressed="${explainOpen && isLocked}">
-          <span class="rounded border border-current px-1 text-[10px] font-bold leading-4">CC</span> Explanation</button>
-        <button data-action="practice-finish" class="${ctl}">Finish set</button>
+        ${exam ? `<button data-action="practice-submit" class="${ctl} border border-white/20">Submit exam</button>`
+          : `<button data-action="practice-explain" class="${ctl}" aria-pressed="${explainOpen}"><span class="rounded border border-current px-1 text-[10px] font-bold leading-4">CC</span> Explanation</button>`}
       </div>
 
-      <!-- Slide-out explanation pane -->
-      <aside class="absolute inset-y-0 right-0 z-10 flex w-full flex-col border-l border-white/10 bg-[#181818] shadow-2xl transition-transform duration-300 sm:w-[420px] ${explainOpen && isLocked ? 'translate-x-0' : 'translate-x-full'}" aria-hidden="${!(explainOpen && isLocked)}" ${explainOpen && isLocked ? '' : 'inert'}>
+      ${exam ? '' : `<!-- Slide-out explanation canvas (review mode only) -->
+      <aside class="absolute inset-y-0 right-0 z-10 flex w-full flex-col border-l border-white/10 bg-[#181818] shadow-2xl transition-transform duration-300 sm:w-[420px] ${explainOpen ? 'translate-x-0' : 'translate-x-full'}" aria-hidden="${!explainOpen}" ${explainOpen ? '' : 'inert'}>
         <div class="flex items-center justify-between border-b border-white/10 px-5 py-3">
-          <div class="text-sm font-bold">Explanation · Q${a.index + 1}</div>
+          <div class="text-sm font-bold">Explanation · Q${index + 1}</div>
           <button data-action="practice-explain" class="rounded-full p-1.5 text-slate-400 hover:bg-white/10 hover:text-white" aria-label="Close explanation">✕</button>
         </div>
         <div class="thin-scroll flex-1 space-y-5 overflow-y-auto px-5 py-5 text-sm leading-relaxed text-slate-200">
           <div><div class="text-[11px] font-bold uppercase tracking-wider text-emerald-400">Correct answer</div><p class="mt-1 font-semibold text-white">${esc(keyText(q, 400))}</p></div>
           <div><div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Why it is right</div><p class="mt-1">${esc(q.proof)}</p></div>
-          <div><div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Answer breakdown: correct vs. incorrect</div>${answerBreakdown(q, isLocked ? lockedResp : undefined)}</div>
+          <div><div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Answer breakdown: correct vs. incorrect</div>${answerBreakdown(q, resp)}</div>
           ${q.trigger ? `<div class="rounded-lg bg-red-500/10 px-3 py-2 text-red-200"><b>Exam trigger:</b> ${esc(q.trigger)}</div>` : ''}
           <button data-action="open-drawer" data-concept="${q.concept}" class="${ctl} !bg-white/10">Master ${esc(CONCEPTS[q.concept].name)} →</button>
         </div>
-      </aside>
+      </aside>`}
     </section>
 
-    <aside class="${ui.card} h-fit !p-3">
-      <div class="px-2 pb-2 pt-1 text-sm font-semibold">Up next in Set ${s.n}</div>
-      <ol class="thin-scroll max-h-[560px] space-y-1 overflow-y-auto">
+    <aside class="${ui.card} h-fit !p-4">
+      <div class="text-sm font-semibold">${exam ? 'Question navigator' : 'Your answers'}</div>
+      <div class="mt-3 grid grid-cols-5 gap-2">
         ${order.map((id, i) => {
-          const qq = QUESTIONS.get(id), l = a.locked[id];
-          const mark = l === undefined ? `<span class="font-mono text-xs ${ui.muted}">${i + 1}</span>` : isCorrect(qq, l) ? '<span class="font-bold text-emerald-500">✓</span>' : '<span class="font-bold text-rose-500">✗</span>';
-          return `<li><button data-action="practice-goto" data-index="${i}" class="flex w-full items-start gap-3 rounded-lg p-2 text-left text-xs transition ${i === a.index ? 'bg-amber-500/15' : 'hover:bg-slate-100 dark:hover:bg-slate-700/50'}">
-            <span class="flex h-6 w-6 shrink-0 items-center justify-center">${mark}</span>
-            <span class="line-clamp-2 leading-snug">${esc(clip(qq.scenario, 110))}</span></button></li>`;
+          const qq = QUESTIONS.get(id);
+          let cls;
+          if (exam) cls = a.flags?.[id] ? 'border-amber-400 bg-amber-400 text-slate-900' : isAnswered(qq, a.picks[id]) ? 'border-slate-700 bg-slate-700 text-white dark:border-slate-300 dark:bg-slate-200 dark:text-slate-900' : 'border-slate-300 text-slate-600 dark:border-slate-600 dark:text-slate-300';
+          else cls = isAnswered(qq, result.answers?.[id]) && isCorrect(qq, result.answers[id]) ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-rose-500 bg-rose-500 text-white';
+          return `<button data-action="${exam ? 'practice-goto' : 'replay-goto'}" data-index="${i}" class="h-9 rounded-lg border text-xs font-bold ${cls} ${i === index ? 'ring-2 ring-red-500 ring-offset-2 ring-offset-white dark:ring-offset-slate-800' : ''}">${i + 1}</button>`;
         }).join('')}
-      </ol>
+      </div>
+      <div class="mt-3 space-y-1 text-[11px] ${ui.muted}">${exam
+        ? '<div>⬛ answered · ⬜ not answered · <span class="text-amber-500">■</span> flagged · <span class="text-red-500">◯</span> current</div><div>Shortcuts: <kbd>A</kbd>–<kbd>E</kbd> answer · <kbd>F</kbd> flag · <kbd>←</kbd>/<kbd>→</kbd> move</div>'
+        : '<div><span class="text-emerald-500">■</span> correct · <span class="text-rose-500">■</span> incorrect or unanswered</div><div>Shortcuts: <kbd>←</kbd>/<kbd>→</kbd> move · <kbd>X</kbd> explanation</div>'}</div>
     </aside>
   </div>`;
 }
 
+/** Pre-submission review, like the real exam's review screen. */
+function examReviewGrid() {
+  const a = S.practice.active, s = setById(a.set), order = setOrder(a.set);
+  const unanswered = order.filter((id) => !isAnswered(QUESTIONS.get(id), a.picks[id]));
+  const flagged = order.filter((id) => a.flags?.[id]);
+  const ec = examClock(a);
+  return `
+  <section class="${ui.card} mx-auto max-w-3xl sm:p-8">
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div><div class="${ui.label} !text-amber-600 dark:!text-amber-400">Practice Exam ${a.set} · ${esc(s.title)}</div>
+        <h1 class="text-2xl font-bold">Review before you submit</h1>
+        <p class="text-sm ${ui.muted}">Click any question to return to it. Answers cannot be changed after you submit.</p></div>
+      <div class="rounded-full px-3 py-1.5 font-mono text-sm font-bold ${ec.cls.replace('bg-white/10 text-white', 'bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-100')}">⏱ <span id="yt-time">${ec.text}</span> left</div>
+    </div>
+    <div class="mt-5 grid grid-cols-3 gap-3 text-center">
+      <div class="rounded-xl bg-slate-50 p-3 dark:bg-slate-900/50"><div class="text-2xl font-extrabold">${order.length - unanswered.length}</div><div class="text-xs ${ui.muted}">answered</div></div>
+      <div class="rounded-xl bg-slate-50 p-3 dark:bg-slate-900/50"><div class="text-2xl font-extrabold ${unanswered.length ? 'text-rose-600 dark:text-rose-400' : ''}">${unanswered.length}</div><div class="text-xs ${ui.muted}">not answered</div></div>
+      <div class="rounded-xl bg-slate-50 p-3 dark:bg-slate-900/50"><div class="text-2xl font-extrabold ${flagged.length ? 'text-amber-600 dark:text-amber-400' : ''}">${flagged.length}</div><div class="text-xs ${ui.muted}">flagged for review</div></div>
+    </div>
+    <div class="mt-5 grid grid-cols-5 gap-2 sm:grid-cols-10">
+      ${order.map((id, i) => {
+        const done = isAnswered(QUESTIONS.get(id), a.picks[id]), flag = a.flags?.[id];
+        return `<button data-action="practice-goto" data-index="${i}" class="h-10 rounded-lg border text-sm font-bold ${flag ? 'border-amber-400 bg-amber-400 text-slate-900' : done ? 'border-slate-700 bg-slate-700 text-white dark:border-slate-300 dark:bg-slate-200 dark:text-slate-900' : 'border-dashed border-rose-400 text-rose-600 dark:text-rose-400'}" aria-label="Question ${i + 1}${done ? ', answered' : ', not answered'}${flag ? ', flagged' : ''}">${i + 1}${flag ? '⚑' : ''}</button>`;
+      }).join('')}
+    </div>
+    <div class="mt-6 flex flex-wrap gap-2">
+      <button data-action="practice-return" class="${B('secondary')}">← Return to exam</button>
+      ${flagged.length ? `<button data-action="practice-goto" data-index="${order.indexOf(flagged[0])}" class="${B('secondary')}">Go to first flagged</button>` : ''}
+      ${unanswered.length ? `<button data-action="practice-goto" data-index="${order.indexOf(unanswered[0])}" class="${B('secondary')}">Go to first unanswered</button>` : ''}
+      <button data-action="practice-submit" class="${B('primary', 'sm:ml-auto')}">Submit exam</button>
+    </div>
+  </section>`;
+}
+
 function practiceSummary(n) {
   const s = setById(n), r = S.practice.results[n];
-  const target = s.questions.length * SECONDS_PER_QUESTION;
+  const scaled = r.scaled ?? scaledScore(r.pct), passed = r.passed ?? r.pct >= T;
   const next = setById(n + 1);
+  const byDomain = r.byDomain || {};
   return `
-  <div class="mb-4"><button data-action="practice-list" class="${B('ghost', '!px-2 text-sm')}">← All practice sets</button></div>
+  <div class="mb-4"><button data-action="practice-list" class="${B('ghost', '!px-2 text-sm')}">← All practice exams</button></div>
   <section class="${ui.card} sm:p-7">
     <div class="flex flex-wrap items-center gap-6">
-      ${ring(r.pct, r.pct >= T ? 'emerald' : 'rose', 'h-28 w-28')}
+      ${ring(r.pct, passed ? 'emerald' : 'rose', 'h-28 w-28')}
       <div class="min-w-0 flex-1">
-        <div class="${ui.label}">Practice Set ${n}/6 complete</div>
-        <h1 class="text-2xl font-bold">${esc(s.title)}</h1>
-        <p class="mt-1 text-sm ${ui.muted}">${r.correct}/${r.total} correct · time ${fmtClock(r.durationSec * 1000)} of ${fmtClock(target * 1000)} · best ${Math.round(r.best * 100)}% · attempt ${r.attempts}</p>
-        <p class="mt-2 text-sm font-semibold ${r.pct >= T ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}">${r.pct >= T ? `Above the ${Math.round(T * 100)}% benchmark. Nice work.` : `Below the ${Math.round(T * 100)}% benchmark. Review the explanations below, then retake the set.`}</p>
+        <div class="${ui.label}">Practice Exam ${n}/6 · ${esc(s.title)}</div>
+        <div class="mt-1 flex flex-wrap items-baseline gap-3">
+          <span class="text-4xl font-extrabold tabular-nums">${scaled}<span class="text-lg ${ui.muted}">/1000</span></span>
+          <span class="rounded-full px-3 py-1 text-sm font-extrabold ${passed ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'}">${passed ? '✓ PASS' : '✗ FAIL'}</span>
+        </div>
+        <p class="mt-1 text-sm ${ui.muted}">${r.correct}/${r.total} correct · time ${fmtClock(r.durationSec * 1000)} of ${fmtClock(examLimitMs(n))} · best ${Math.round(r.best * 100)}% · attempt ${r.attempts}${r.auto ? ' · auto-submitted at time-out' : ''}</p>
+        <p class="mt-1 text-xs ${ui.muted}">Pass mark 720/1000. The real exam uses a scaled score; this one maps your percentage directly onto 100–1000.</p>
       </div>
       <div class="flex flex-col gap-2">
-        ${next ? `<button data-action="practice-open" data-set="${next.n}" class="${B('primary')}">Next: Set ${next.n} ▶</button>` : `<button data-action="nav" data-view="result" class="${B('primary')}">Final result →</button>`}
-        <button data-action="practice-start" data-set="${n}" class="${B('secondary')}">Retake this set</button>
+        <button data-action="practice-replay" data-set="${n}" class="${B('primary')}">▶ Review answers with explanations</button>
+        ${next ? `<button data-action="practice-open" data-set="${next.n}" class="${B('secondary')}">Next: Exam ${next.n} ▶</button>` : `<button data-action="nav" data-view="result" class="${B('secondary')}">Final result →</button>`}
+        <button data-action="practice-retake" data-set="${n}" class="${B('ghost', 'text-xs')}">Retake this exam</button>
       </div>
     </div>
+    ${Object.keys(byDomain).length ? `<div class="mt-6 grid gap-3 sm:grid-cols-2">${Object.entries(byDomain).map(([d, t]) => `<div class="text-sm">
+      <div class="flex justify-between"><span>${DOMAINS[d].short}</span><span class="font-mono text-xs font-bold">${t.c}/${t.n}</span></div>
+      <div class="mt-1">${bar(t.c / t.n, t.c / t.n >= T ? 'bg-emerald-500' : 'bg-rose-500')}</div></div>`).join('')}</div>` : ''}
+    ${videoEmbed(n, 'mt-6')}
   </section>
   <section class="mt-6 space-y-3">
     ${s.questions.map((q, i) => {
-      const resp = r.answers?.[q.id], ok = resp !== undefined && isCorrect(q, resp);
+      const resp = r.answers?.[q.id], ok = resp !== undefined && isAnswered(q, resp) && isCorrect(q, resp);
       return `<details class="${ui.card} !p-0">
         <summary class="flex cursor-pointer list-none items-start gap-3 p-4">
           <span class="mt-0.5 text-lg font-bold ${ok ? 'text-emerald-500' : 'text-rose-500'}">${ok ? '✓' : '✗'}</span>
@@ -3502,6 +4595,7 @@ function practiceSummary(n) {
         </summary>
         <div class="border-t border-slate-200 px-4 pb-4 pt-3 text-sm leading-relaxed dark:border-slate-700">
           <p>${esc(q.proof)}</p>
+          ${q.eliminate ? `<div class="mt-2">${eliminationList(q)}</div>` : ''}
           ${q.trigger ? `<p class="mt-2 text-xs ${ui.muted}"><b>Exam trigger:</b> ${esc(q.trigger)}</p>` : ''}
         </div>
       </details>`;
@@ -3624,79 +4718,94 @@ function sendFinalReport(auto) {
   if (!auto) { render(); toast('Training summary report sent.', 'ok'); }
 }
 
-/* ---------- Practice actions ---------- */
+/* ---------- Practice exam actions ---------- */
 function startPracticeSet(n) {
   const cur = S.practice.active;
-  if (cur && cur.set !== n && Object.keys(cur.locked).length
-    && !confirm(`Set ${cur.set} is in progress (${Object.keys(cur.locked).length} answered). Abandon it and start Set ${n}?`)) return;
-  S.practice.active = { set: n, index: 0, picks: {}, locked: {}, qTime: {}, elapsedMs: 0, startedAt: Date.now() };
+  if (cur && cur.set !== n && answeredIds(cur).length
+    && !confirm(`Exam ${cur.set} is in progress (${answeredIds(cur).length} answered). Discard it and start Exam ${n}?`)) return;
+  S.practice.active = { set: n, index: 0, picks: {}, flags: {}, qTime: {}, elapsedMs: 0, startedAt: Date.now() };
   S.practice.mode = 'play'; explainOpen = false;
   persist(); render(); window.scrollTo({ top: 0 });
 }
 function openPracticeSet(n) {
   const a = S.practice.active;
-  if (a?.set === n) {   // resume at the first unanswered question of this page load's order
-    const first = setOrder(n).findIndex((id) => a.locked[id] === undefined);
-    a.index = first < 0 ? 0 : first; S.practice.mode = 'play'; explainOpen = false;
-    persist(); render(); window.scrollTo({ top: 0 }); return;
+  if (a?.set === n) {   // resume at the first unanswered question
+    const first = setOrder(n).findIndex((id) => !isAnswered(QUESTIONS.get(id), a.picks[id]));
+    a.index = first < 0 ? 0 : first; S.practice.mode = 'play';
+  } else if (S.practice.results[n]) {
+    S.practice.mode = 'summary'; S.practice.summarySet = n;
+  } else {
+    S.practice.mode = 'intro'; S.practice.introSet = n;
   }
-  if (S.practice.results[n]) { S.practice.mode = 'summary'; S.practice.summarySet = n; persist(); render(); window.scrollTo({ top: 0 }); return; }
-  startPracticeSet(n);
-}
-function lockPracticeAnswer() {
-  const a = S.practice.active, q = practiceQ();
-  if (!a || a.locked[q.id] !== undefined) return;
-  const resp = a.picks[q.id];
-  if (!isAnswered(q, resp)) { toast(qType(q) === 'multi' ? `Select exactly ${q.answer.length} answers.` : 'Choose an answer first.', 'error'); return; }
-  a.locked[q.id] = resp;
-  recordAttempt(q, resp, 'practice', false);
-  checkMilestones();
-  persist(); render();
-  toast(isCorrect(q, resp) ? 'Correct! Open the explanation for the full breakdown.' : 'Incorrect. Open the explanation to see why.', isCorrect(q, resp) ? 'ok' : 'error');
+  explainOpen = false; persist(); render(); window.scrollTo({ top: 0 });
 }
 function movePractice(index) {
   const a = S.practice.active; if (!a) return;
-  a.index = Math.max(0, Math.min(setOrder(a.set).length - 1, index)); explainOpen = false;
+  a.index = Math.max(0, Math.min(setOrder(a.set).length - 1, index));
+  S.practice.mode = 'play';
   persist(); render();
 }
-function finishPracticeSet() {
+function toggleFlag() {
+  const a = S.practice.active, q = practiceQ(); if (!a || !q) return;
+  a.flags ??= {};
+  if (a.flags[q.id]) delete a.flags[q.id]; else a.flags[q.id] = true;
+  persist(); render();
+}
+function submitExam(auto = false) {
   const a = S.practice.active; if (!a) return;
   const s = setById(a.set), order = setOrder(a.set);
-  const open = order.filter((id) => a.locked[id] === undefined).length;
-  if (open && !confirm(`${open} question${open === 1 ? ' is' : 's are'} unanswered and will count as incorrect. Finish the set anyway?`)) return;
-  const correct = s.questions.filter((q) => a.locked[q.id] !== undefined && isCorrect(q, a.locked[q.id])).length;
+  if (!auto) {
+    const open = order.length - answeredIds(a).length;
+    if (!confirm(open ? `${open} question${open === 1 ? ' is' : 's are'} not answered and will count as incorrect. Submit the exam anyway?`
+      : 'Submit your exam? You cannot change answers after submitting.')) return;
+  }
+  const byDomain = {};
+  let correct = 0;
+  for (const q of s.questions) {
+    const resp = a.picks[q.id], answered = isAnswered(q, resp), ok = answered && isCorrect(q, resp);
+    if (answered) recordAttempt(q, resp, 'practice', false);
+    const t = (byDomain[q.domain] ??= { n: 0, c: 0 }); t.n++; if (ok) { t.c++; correct++; }
+  }
   const total = s.questions.length, pct = correct / total, prev = S.practice.results[s.n];
-  S.practice.results[s.n] = { pct, correct, total, durationSec: Math.round(a.elapsedMs / 1000), ts: Date.now(),
-    best: Math.max(pct, prev?.best ?? 0), attempts: (prev?.attempts || 0) + 1, answers: { ...a.locked } };
+  const durationSec = Math.round(Math.min(a.elapsedMs, examLimitMs(a.set)) / 1000);
+  S.practice.results[s.n] = { pct, correct, total, durationSec, ts: Date.now(), best: Math.max(pct, prev?.best ?? 0), attempts: (prev?.attempts || 0) + 1,
+    answers: { ...a.picks }, scaled: scaledScore(pct), passed: pct >= T, byDomain, auto };
   S.practice.active = null; S.practice.mode = 'summary'; S.practice.summarySet = s.n; explainOpen = false;
-  track('practice_complete', { set: s.n, setsTotal: PRACTICE_SETS.length, scorePct: Math.round(pct * 100), correct, total, durationSec: Math.round(a.elapsedMs / 1000) });
+  track('practice_complete', { set: s.n, setsTotal: PRACTICE_SETS.length, scorePct: Math.round(pct * 100), correct, total, durationSec });
+  checkMilestones();
   if (setsDone() === PRACTICE_SETS.length && !S.tracked.final) sendFinalReport(true);
   persistNow(); render(); window.scrollTo({ top: 0 });
-  toast(`Set ${s.n} complete: ${Math.round(pct * 100)}%.`, pct >= T ? 'ok' : 'amber');
+  toast(auto ? `Time is up. Exam ${s.n} was submitted automatically: ${scaledScore(pct)}/1000.`
+    : `Exam ${s.n} submitted: ${scaledScore(pct)}/1000 · ${pct >= T ? 'PASS' : 'FAIL'}.`, pct >= T ? 'ok' : 'amber');
+}
+function openReplay(n, index = 0) {
+  S.practice.replay = { set: n, index }; S.practice.mode = 'replay'; explainOpen = false;
+  persist(); render(); window.scrollTo({ top: 0 });
+}
+function moveReplay(index) {
+  const r = S.practice.replay; if (!r) return;
+  r.index = Math.max(0, Math.min(setOrder(r.set).length - 1, index)); explainOpen = false;
+  persist(); render();
 }
 
-// Running exam timer: counts only while the player is visible.
+// Exam timer: counts only while the exam is on screen and the tab is visible; submits at 0:00.
 let lastTick = Date.now();
 setInterval(() => {
   const now = Date.now(), dt = Math.min(now - lastTick, 5000); lastTick = now;
   const a = S.practice.active;
-  if (!a || S.view !== 'practice' || S.practice.mode !== 'play' || document.hidden || !hasSession()) return;
+  if (!a || S.view !== 'practice' || !['play', 'review'].includes(S.practice.mode) || document.hidden || !hasSession()) return;
   a.elapsedMs += dt;
-  const q = practiceQ();
-  if (q && a.locked[q.id] === undefined) {
-    a.qTime ??= {};
-    const before = a.qTime[q.id] || 0;
-    a.qTime[q.id] = before + dt;
-    if (before < SECONDS_PER_QUESTION * 1000 && a.qTime[q.id] >= SECONDS_PER_QUESTION * 1000) toast('Time\'s up for this question. Lock in your best answer.', 'amber');
-  }
-  const el = document.getElementById('yt-time');
-  if (el) el.textContent = fmtClock(a.elapsedMs);
+  if (a.elapsedMs >= examLimitMs(a.set)) { submitExam(true); return; }
+  const ec = examClock(a), time = document.getElementById('yt-time'), clock = document.getElementById('yt-clock');
+  if (time) time.textContent = ec.text;
+  if (clock) clock.className = clock.className.replace(/bg-(white\/10|rose-600|amber-500) text-(white|slate-900)/, ec.cls);
+  const q = S.practice.mode === 'play' && practiceQ();
   if (q) {
-    const c = qClock(a, q), pill = document.getElementById('yt-qclock'), bar = document.getElementById('yt-qbar');
-    const txt = document.getElementById('yt-qtime');
-    if (txt) txt.textContent = c.text;
-    if (pill) pill.className = pill.className.replace(/bg-(white\/10|rose-600|amber-500) text-(white|slate-300|slate-900)/, c.cls);
-    if (bar) { bar.style.width = `${c.pct}%`; bar.className = bar.className.replace(/bg-(red-600|amber-400|rose-500|slate-500)/, c.bar); }
+    a.qTime ??= {};
+    a.qTime[q.id] = (a.qTime[q.id] || 0) + dt;
+    const c = qClock(a, q), txt = document.getElementById('yt-qtime'), barEl = document.getElementById('yt-qbar');
+    if (txt) { txt.textContent = c.text; txt.className = txt.className.replace(/bg-(white\/10|rose-600|amber-500) text-(white|slate-900)/, c.cls); }
+    if (barEl) { barEl.style.width = `${c.pct}%`; barEl.className = barEl.className.replace(/bg-(red-600|amber-400|rose-500)/, c.bar); }
   }
   if (Math.floor(a.elapsedMs / 1000) % 15 === 0) persist();
 }, 1000);
@@ -4211,7 +5320,7 @@ document.addEventListener('click', (e) => {
     case 'edit-profile': editingProfile = true; render(); break;
     case 'cancel-edit': editingProfile = false; render(); break;
     case 'diag-prev': S.diagnostic.index = Math.max(0, S.diagnostic.index - 1); persist(); render(); break;
-    case 'diag-next': S.diagnostic.index = Math.min(DIAGNOSTIC.length - 1, S.diagnostic.index + 1); persist(); render(); break;
+    case 'diag-next': S.diagnostic.index = Math.min(diagIds().length - 1, S.diagnostic.index + 1); persist(); render(); break;
     case 'diag-goto': S.diagnostic.index = Number(ds.index); persist(); render(); break;
     case 'diag-submit': submitDiagnostic(); break;
     case 'retake': retakeDiagnostic(); break;
@@ -4228,13 +5337,20 @@ document.addEventListener('click', (e) => {
     case 'practice-open': openPracticeSet(Number(ds.set)); break;
     case 'practice-start': startPracticeSet(Number(ds.set)); break;
     case 'practice-list': S.practice.mode = 'list'; explainOpen = false; persist(); render(); break;
-    case 'practice-lock': lockPracticeAnswer(); break;
     case 'practice-prev': movePractice(S.practice.active.index - 1); break;
     case 'practice-next': movePractice(S.practice.active.index + 1); break;
-    case 'practice-goto': movePractice(Number(ds.index)); break;
-    case 'practice-next-open': { const a = S.practice.active; movePractice(Math.max(0, setOrder(a.set).findIndex((id) => a.locked[id] === undefined))); break; }
+    case 'practice-goto': movePractice(Number(ds.index)); window.scrollTo({ top: 0 }); break;
+    case 'practice-flag': toggleFlag(); break;
+    case 'practice-review': S.practice.mode = 'review'; persist(); render(); window.scrollTo({ top: 0 }); break;
+    case 'practice-return': S.practice.mode = 'play'; persist(); render(); break;
+    case 'practice-submit': submitExam(false); break;
+    case 'practice-retake': S.practice.mode = 'intro'; S.practice.introSet = Number(ds.set); persist(); render(); window.scrollTo({ top: 0 }); break;
+    case 'practice-summary': S.practice.mode = 'summary'; S.practice.summarySet = Number(ds.set); explainOpen = false; persist(); render(); break;
+    case 'practice-replay': openReplay(Number(ds.set)); break;
+    case 'replay-prev': moveReplay(S.practice.replay.index - 1); break;
+    case 'replay-next': moveReplay(S.practice.replay.index + 1); break;
+    case 'replay-goto': moveReplay(Number(ds.index)); break;
     case 'practice-explain': explainOpen = !explainOpen; render(); break;
-    case 'practice-finish': finishPracticeSet(); break;
     case 'send-report': sendFinalReport(false); break;
     case 'svl-node':
       diagramSel[ds.cat] = diagramSel[ds.cat] === ds.node ? null : ds.node; render();
@@ -4268,7 +5384,7 @@ document.addEventListener('change', (e) => {
     if (!hasSession()) return;
     const diag = t.dataset.ns === 'diag', a = S.practice.active;
     const q = diag ? diagQuestion(S.diagnostic.index) : practiceQ();
-    if (!q || (!diag && a.locked[q.id] !== undefined)) return;
+    if (!q || (!diag && (!a || S.practice.mode !== 'play'))) return;   // answers are read-only after submission
     const store = diag ? S.diagnostic.answers : a.picks, i = Number(t.dataset.pick);
     if (qType(q) === 'multi') {
       const cur = Array.isArray(store[q.id]) ? store[q.id].filter((x) => x !== i) : [];
@@ -4301,14 +5417,13 @@ document.addEventListener('input', (e) => {
   if (t.dataset.fill === 'diag') {
     const q = diagQuestion(S.diagnostic.index);
     S.diagnostic.answers[q.id] = t.value;
-    const done = DIAGNOSTIC.filter((x) => isAnswered(x, S.diagnostic.answers[x.id])).length;
+    const done = diagSet().filter((x) => isAnswered(x, S.diagnostic.answers[x.id])).length;
     const count = $('#diag-count'); if (count) count.textContent = done;
-    document.querySelectorAll('[data-action="diag-submit"]').forEach((b) => { b.disabled = done < DIAGNOSTIC.length; });
+    document.querySelectorAll('[data-action="diag-submit"]').forEach((b) => { b.disabled = done < diagIds().length; });
   } else {
     const a = S.practice.active, q = practiceQ();
-    if (!a || a.locked[q.id] !== undefined) return;
+    if (!a || !q || S.practice.mode !== 'play') return;
     a.picks[q.id] = t.value;
-    const lock = $('#yt-lock'); if (lock) lock.disabled = !isAnswered(q, t.value);
   }
   persist();
 });
@@ -4354,8 +5469,11 @@ document.addEventListener('keydown', (e) => {
     if (k.length === 1 && idx >= 0) { e.preventDefault(); $(`[data-ns="prac"][data-pos="${idx}"]:not(:disabled)`)?.click(); }
     else if (e.key === 'ArrowRight') { e.preventDefault(); $('[data-action="practice-next"]:not(:disabled)')?.click(); }
     else if (e.key === 'ArrowLeft') { e.preventDefault(); $('[data-action="practice-prev"]:not(:disabled)')?.click(); }
-    else if (k === 'l') { e.preventDefault(); $('#yt-lock:not(:disabled)')?.click(); }
-    else if (k === 'x') { e.preventDefault(); $('[data-action="practice-explain"]:not(:disabled)')?.click(); }
+    else if (k === 'f') { e.preventDefault(); toggleFlag(); }
+  } else if (S.view === 'practice' && S.practice.mode === 'replay' && S.practice.replay) {
+    if (e.key === 'ArrowRight') { e.preventDefault(); $('[data-action="replay-next"]:not(:disabled)')?.click(); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); $('[data-action="replay-prev"]:not(:disabled)')?.click(); }
+    else if (k === 'x') { e.preventDefault(); explainOpen = !explainOpen; render(); }
   } else if (S.view === 'coach') {
     if (k.length === 1 && idx >= 0 && idx < (QUESTIONS.get(S.drill.currentId)?.options.length || 4) && !S.drill.evaluated) { e.preventDefault(); answerDrill(idx); }
     else if (k === 'r') { e.preventDefault(); $('[data-action="drill-retry"]')?.click(); }
