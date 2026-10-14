@@ -167,6 +167,7 @@ const CONFIG = {
   readinessMilestones: [0.72, 0.85], // weighted mastery thresholds that trigger a readiness ping
   readinessMinAnswers: 10,           // ignore readiness until this many scored answers exist
   stuckThreshold: 0.72,         // < 72% mastery (≈ < 720/1000) = stuck area
+  practicalUnlockPct: 0.70,     // 70% rule: one practice exam at or above this unlocks the practical tests for good
   masterItAfterWrong: 2,         // "Master It" is highlighted as recommended after this many wrong answers on a scenario
   // Optional: hard-code your YouTube training sets per concept (video or playlist URL).
   // Links pasted inside the Master It drawer override these and are stored per browser.
@@ -2699,6 +2700,7 @@ const defaultState = () => ({
   tracked: { modules: {}, readiness: {}, final: null }, // progress pings already sent (each fires once)
   remediation: { mastered: {} },                   // category -> timestamp of "Mark Topic as Mastered"
   practice: { mode: 'list', active: null, results: {} }, // the six practice sets
+  passUnlock: null,                                // { set, pct, ts }: first practice exam >= 70%; keeps the tests unlocked in every later session
 });
 
 const LEVELS = { beginner: 'Beginner', intermediate: 'Intermediate', senior: 'Senior Admin / DevOps' };
@@ -2732,6 +2734,11 @@ function loadState() {
       delete s.practice.active.locked;
     }
     if (['intro', 'replay'].includes(s.practice.mode) && !s.practice.introSet && !s.practice.replay) s.practice.mode = 'list';
+    // Learners who already passed an exam before the 70% rule existed keep their unlock.
+    if (!s.passUnlock) {
+      const hit = Object.entries(s.practice.results || {}).find(([, r]) => (r.best ?? r.pct) >= CONFIG.practicalUnlockPct);
+      if (hit) s.passUnlock = { set: Number(hit[0]), pct: hit[1].best ?? hit[1].pct, ts: hit[1].ts || Date.now() };
+    }
     return s;
   } catch { return defaultState(); }
 }
@@ -3208,7 +3215,9 @@ const lockIcon = '<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" strok
 
 /* ---------- Remediation, practice and readiness metrics ---------- */
 const weakTopics = () => S.baseline?.weakCategories || [];
-const practiceUnlocked = () => diagnosticDone() && weakTopics().every((k) => S.remediation.mastered[k]);
+const PASS_UNLOCK_MSG = 'Your passing score has been verified. The practical test is now unlocked for all sessions.';
+// The 70% rule: once any practice exam scores >= 70%, the practical tests stay unlocked, even after a diagnostic retake.
+const practiceUnlocked = () => !!S.passUnlock || (diagnosticDone() && weakTopics().every((k) => S.remediation.mastered[k]));
 const setsDone = () => PRACTICE_SETS.filter((s) => S.practice.results[s.n]).length;
 function practiceLockReason() {
   if (!diagnosticDone()) return 'Complete the diagnostic test first.';
@@ -4630,7 +4639,7 @@ function viewRemediation() {
   <section class="mt-6 rounded-2xl border p-5 text-center ${unlocked ? 'border-emerald-400/60 bg-emerald-50 dark:bg-emerald-500/10' : 'border-amber-300/60 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/10'}">
     ${unlocked
       ? `<div class="font-semibold text-emerald-800 dark:text-emerald-200">Practice exams unlocked</div>
-         <p class="mt-1 text-sm text-emerald-900/80 dark:text-emerald-100/80">Six exam-style sets are ready, each 10 questions at real exam pace.</p>
+         <p class="mt-1 text-sm text-emerald-900/80 dark:text-emerald-100/80">${S.passUnlock ? `Unlocked for all sessions: you passed Exam ${S.passUnlock.set} with ${Math.round(S.passUnlock.pct * 100)}%.` : 'Six full exams are ready, each 25 questions at real exam pace.'}</p>
          <button data-action="nav" data-view="practice" class="${B('primary', 'mt-4')}">Go to Practice Exams →</button>`
       : `<div class="flex items-center justify-center gap-2 font-semibold text-amber-900 dark:text-amber-100">${lockIcon} Practice exams are locked</div>
          <p class="mt-1 text-sm text-amber-900/80 dark:text-amber-100/80">${esc(practiceLockReason())}</p>`}
@@ -4691,6 +4700,10 @@ function practiceList() {
     </div>
     <div class="text-right"><div class="font-mono text-lg font-bold">${setsDone()}/${PRACTICE_SETS.length}</div><div class="text-xs ${ui.muted}">exams completed</div></div>
   </div>
+  ${S.passUnlock ? `<div class="mb-6 flex items-center gap-3 rounded-xl border border-emerald-400/60 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:bg-emerald-500/10 dark:text-emerald-100" role="status">
+    <span class="text-xl" aria-hidden="true">🔓</span>
+    <span><b>Unlocked for all sessions.</b> You passed Exam ${S.passUnlock.set} with ${Math.round(S.passUnlock.pct * 100)}% (70% rule), so the practical tests stay open even if you retake the diagnostic.</span>
+  </div>` : ''}
   <div class="grid gap-x-5 gap-y-8 sm:grid-cols-2 xl:grid-cols-3">
     ${PRACTICE_SETS.map((s, i) => {
       const r = P.results[s.n], live = P.active?.set === s.n;
@@ -4944,6 +4957,10 @@ function practiceSummary(n) {
   const byDomain = r.byDomain || {};
   return `
   <div class="mb-4"><button data-action="practice-list" class="${B('ghost', '!px-2 text-sm')}">← All practice exams</button></div>
+  ${r.unlockedPractical ? `<section class="mb-5 rounded-2xl border-2 border-emerald-500 bg-emerald-50 p-5 dark:bg-emerald-500/10" role="status">
+    <div class="text-lg font-bold text-emerald-800 dark:text-emerald-200">🎉 Congratulations, ${esc(S.profile?.name || 'learner')}! You scored ${Math.round(r.pct * 100)}%.</div>
+    <p class="mt-1 font-semibold text-emerald-900 dark:text-emerald-100">${PASS_UNLOCK_MSG}</p>
+  </section>` : ''}
   <section class="${ui.card} sm:p-7">
     <div class="flex flex-wrap items-center gap-6">
       ${ring(r.pct, passed ? 'emerald' : 'rose', 'h-28 w-28')}
@@ -5151,14 +5168,17 @@ function submitExam(auto = false) {
   }
   const total = s.questions.length, pct = correct / total, prev = S.practice.results[s.n];
   const durationSec = Math.round(Math.min(a.elapsedMs, examLimitMs(a.set)) / 1000);
+  const unlockedPractical = !S.passUnlock && pct >= CONFIG.practicalUnlockPct;
+  if (unlockedPractical) S.passUnlock = { set: s.n, pct, ts: Date.now() };
   S.practice.results[s.n] = { pct, correct, total, durationSec, ts: Date.now(), best: Math.max(pct, prev?.best ?? 0), attempts: (prev?.attempts || 0) + 1,
-    answers: { ...a.picks }, scaled: scaledScore(pct), passed: pct >= T, byDomain, auto };
+    answers: { ...a.picks }, scaled: scaledScore(pct), passed: pct >= T, byDomain, auto, unlockedPractical };
   S.practice.active = null; S.practice.mode = 'summary'; S.practice.summarySet = s.n; explainOpen = false;
   track('practice_complete', { set: s.n, setsTotal: PRACTICE_SETS.length, scorePct: Math.round(pct * 100), correct, total, durationSec });
   checkMilestones();
   if (setsDone() === PRACTICE_SETS.length && !S.tracked.final) sendFinalReport(true);
   persistNow(); render(); window.scrollTo({ top: 0 });
-  toast(auto ? `Time is up. Exam ${s.n} was submitted automatically: ${scaledScore(pct)}/1000.`
+  if (unlockedPractical) toast(`Congratulations! ${PASS_UNLOCK_MSG}`, 'ok');
+  else toast(auto ? `Time is up. Exam ${s.n} was submitted automatically: ${scaledScore(pct)}/1000.`
     : `Exam ${s.n} submitted: ${scaledScore(pct)}/1000 · ${pct >= T ? 'PASS' : 'FAIL'}.`, pct >= T ? 'ok' : 'amber');
 }
 function openReplay(n, index = 0) {

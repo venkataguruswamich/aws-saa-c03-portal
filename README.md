@@ -26,6 +26,8 @@ You can also double-click `index.html`. Everything works, **except** YouTube emb
    - CloudWatch, pulsing alerts to SNS
 
    **Practice exams stay locked until every weak topic is marked "Mastered".**
+
+   **The 70% rule:** the first time a learner scores 70% or more on any practice exam, the practice exams unlock permanently for that learner, in every later session and even after a diagnostic retake. The portal congratulates them with: *"Your passing score has been verified. The practical test is now unlocked for all sessions."* The threshold is `CONFIG.practicalUnlockPct`. The exam's own PASS mark stays at 720/1000. Learners who had already scored 70% or more before this rule are unlocked automatically.
 5. **Coaching Core.** Adaptive drills with the Instant Tutor and the **Master It** masterclass drawer.
 6. **Practice Exams (Phase 4).** Six full practice exams of **25 scenario questions** each (150 in total), run under real exam conditions:
    - a rules screen before starting;
